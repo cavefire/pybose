@@ -22,14 +22,9 @@ Other Bose devices may also work, but they have not been tested.
 
 ## Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/cavefire/pybose.git
-   cd pybose```
-2. Install the required python packages:
-    ```bash
-    pip install -r requirements.txt```
-
+```bash
+pip install pybose
+```
 
 ## Usage
 
