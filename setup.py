@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="pybose",
-    version="0.0.2",  # Initial version
+    version="0.0.2-r2",  # Initial version
     description="An unofficial Python API for controlling Bose soundbars and speakers.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",

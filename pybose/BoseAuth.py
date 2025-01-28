@@ -3,7 +3,7 @@ import time
 import json
 import sys
 import jwt
-from GSSDK import GSRequest, SigUtils
+from .GSSDK import GSRequest, SigUtils
 
 """
 ALL API KEYS ARE PUBLICLY AVAILABLE ON THE BOSE WEBSITE
