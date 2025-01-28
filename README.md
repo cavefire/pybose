@@ -109,13 +109,32 @@ If you encounter issues, have feature requests, or want to contribute, feel free
 The file `AvailableMethods.txt` contains a list of all available `resources` I could find.
 Best way to find out, what data these functions need, is to use the official app and sniff the network traffic. I used `Proxymon` for this. There should be a websocket connection to `ws://<device_ip>:8082` which contains all the data you need.
 
+## Wishlist
+
+The first item on my wishlist is a **Homeassistant** integration. I am currently working on this, but it is not quite ready for release yet. As soon as it is, I will link it here!
+
+**Other items on my wishlist:**
+
+- [ ] Implement token refresh
+- [ ] Implement groups
+- [ ] Implement source switching
+- [ ] Implement equalizer settings
+- [ ] Implement bass module settings
+- [ ] Implement surround speaker settings
+
+And lastly, a way to not use the BOSE cloud at all would be nice. But I am not sure, if this is possible at all.
+
 ## Disclaimer
 This project is not affiliated with Bose Corporation. The API is reverse-engineered and may break at any time. Use at your own risk.
 
 **Be respectful and avoid spamming the API with unnecessary requests to ensure this project remains functional for everyone.**
 
-To the BOSE legal team:
-**ALL API KEYS USED IN THIS PROJECT ARE PUBLICLY AVAILABLE ON THE BOSE WEBSITE, THEREFORE BELONGING TO PUBLIC DOMAIN.** There was no need to be a computer specialist to find them, so: Please do not sue me for making people use **THEIR** products in a way THEY want to.
+
+**To the BOSE legal team:**
+
+All API keys used in this project are publicly available on the Bose website.
+
+There was no need to be a computer specialist to find them, so: Please do not sue me for making people use their products in a way they want to.
 
 If you have any issues with me publishing this, please contact me! I am happy to discuss this with you and make your products better.
 
