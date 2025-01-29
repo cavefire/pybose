@@ -3,8 +3,10 @@ from typing import List, Dict
 
 class BoseDiscovery:
   """ Discover Bose devices on the local network using Zeroconf. """
-  def __init__(self):
-    self.zeroconf = Zeroconf()
+  def __init__(self, zeroconf: Zeroconf = None):
+    if zeroconf is None:
+      zeroconf = Zeroconf()
+    self.zeroconf = zeroconf
     self.devices: List[Dict[str, str]] = []
 
   def _on_service_state_change(self, zeroconf, service_type, name, state_change):

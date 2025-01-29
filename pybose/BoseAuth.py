@@ -24,9 +24,9 @@ Otherwise BOSE may block this project all together.
 class BoseAuth:
     GIGYA_API_KEY = '3_7PoVX7ELjlWyppFZFGia1Wf1rNGZv_mqVgtqVmYl3Js-hQxZiFIU8uHxd8G6PyNz'
     GIGYA_UA = 'Bose/32768 MySSID/1568.300.101 Darwin/24.2.0'
-    
+
     BOSE_API_KEY = '67616C617061676F732D70726F642D6D61647269642D696F73'
-    
+
     def __init__(self):
         self._control_token = None
 
@@ -34,7 +34,7 @@ class BoseAuth:
         """
         Start a session and get the GMID and UCID
         """
-        
+
         url = "https://socialize.us1.gigya.com/socialize.getSDKConfig"
         data = {
             "apikey": self.GIGYA_API_KEY,
@@ -54,7 +54,7 @@ class BoseAuth:
         """
         Login to Gigya
         """
-        
+
         url = 'https://accounts.us1.gigya.com/accounts.login'
         headers = {
             'Host': 'accounts.us1.gigya.com',
@@ -99,7 +99,7 @@ class BoseAuth:
         """
         Get the authentication token from Gigya
         """
-        
+
         url = "https://accounts.us1.gigya.com/accounts.getJWT"
         headers = {
             'Host': 'accounts.us1.gigya.com',
@@ -156,7 +156,7 @@ class BoseAuth:
         response = requests.post(url, headers=headers, json=data, verify=False).json()
         return response
 
-    def _is_token_valid(self, token):
+    def is_token_valid(self, token):
         """
         Check if the token is still valid
         """

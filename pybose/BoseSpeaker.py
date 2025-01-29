@@ -15,12 +15,12 @@ import logging
 from ssl import SSLContext, CERT_NONE
 import websockets
 from threading import Event
-import BoseResponse as BoseResponse
+import .BoseResponse as BoseResponse
 import sys
 
 
 class BoseSpeaker:
-    def __init__(self, control_token: str, device_id: str, host: str, version = 1):
+    def __init__(self, control_token: str, host: str, device_id = None, version = 1):
         self._control_token = control_token
         self._device_id = device_id
         self._host = host
@@ -35,6 +35,7 @@ class BoseSpeaker:
         self._stop_event = Event()
         self._receiver_task = None
         self._receivers = {}
+        self._message_queue = asyncio.Queue()
 
     async def connect(self):
         """Connect to the WebSocket and start the receiver task."""
@@ -86,8 +87,12 @@ class BoseSpeaker:
             }
         }
 
-        await self._websocket.send(json.dumps(message))
-        logging.debug(f"Sent message: {json.dumps(message, indent=4)}")
+        if self._device_id is None:
+            await self._message_queue.put(message)
+            logging.debug(f"Waiting for deviceID. Queued message: {json.dumps(message, indent=4)}")
+        else:
+            await self._websocket.send(json.dumps(message))
+            logging.debug(f"Sent message: {json.dumps(message, indent=4)}")
 
         # Wait for response with matching reqID
         if not waitForResponse:
@@ -110,6 +115,13 @@ class BoseSpeaker:
                 message = await self._websocket.recv()
                 logging.debug(f"Received message: {message}")
                 parsed_message = json.loads(message)
+                
+                if "header" in parsed_message and "device" in parsed_message["header"] and self._device_id is None:
+                    self._device_id = parsed_message["header"]["device"]
+                    while not self._message_queue.empty():
+                        message = await self._message_queue.get()
+                        await self._websocket.send(json.dumps(message))
+                        logging.debug(f"Sent queued message: {json.dumps(message, indent=4)}")
 
                 # Check if the message is a response to a request
                 if "header" in parsed_message and "reqID" in parsed_message["header"]:
