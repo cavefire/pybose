@@ -2,6 +2,8 @@
 
 This Python project provides an unofficial API to control Bose Soundbars and Speakers locally. The API was reverse-engineered by analyzing the Bose app's API calls and is **not officially supported by Bose**. It allows users to interact with their Bose devices through local network communication and provides a basic feature set for device control.
 
+Also check out my Homeassistant integration (WIP): [Bose-Homeassistant](https://github.com/cavefire/Bose-Homeassistant)
+
 ## Features
 
 Currently supported functionalities:
@@ -108,13 +110,14 @@ Best way to find out, what data these functions need, is to use the official app
 
 ## Wishlist
 
-The first item on my wishlist is a **Homeassistant** integration. I am currently working on this, but it is not quite ready for release yet. As soon as it is, I will link it here!
+The first item on my wishlist is a **Homeassistant** integration. I am currently working on this here: [Bose-Homeassistant](https://github.com/cavefire/Bose-Homeassistant)
 
 **Other items on my wishlist:**
 
 - [ ] Implement token refresh
 - [ ] Implement groups
-- [ ] Implement source switching
+- [x] Implement source (TV) switching
+- [ ] Implement source (Bluetooth) switching
 - [ ] Implement equalizer settings
 - [ ] Implement bass module settings
 - [ ] Implement surround speaker settings
