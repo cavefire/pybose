@@ -289,6 +289,14 @@ class BoseSpeaker:
         body = {"notifications": [{"resource": resource, "version": 1} for resource in resources ]}
         return await self._request("/subscription", "PUT", body, version=2)
 
+    async def switch_tv_source(self):
+        """Switch to TV source."""
+        body = {
+            "source": "PRODUCT",
+            "sourceAccount": "TV"
+        }
+        return await self._request("/content/playbackRequest", "POST", body)
+
 # EXAMPLE USAGE
 
 async def main(control_token, device_id, host):

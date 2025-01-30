@@ -89,6 +89,8 @@ After attaching to the speaker, you can use the following functions:
 * play
 * skip_next
 * skip_previous
+* subscribe
+* switch_tv_source
 
 **Note:** The device supports much more. But for now, these are the only functions implemented. Feel free to add more, or open an issue if you have a specific need.
 
