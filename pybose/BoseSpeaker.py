@@ -15,8 +15,97 @@ import logging
 from ssl import SSLContext, CERT_NONE
 import websockets
 from threading import Event
-import .BoseResponse as BoseResponse
+from .BoseResponse import AudioVolume, ContentNowPlaying, SystemInfo, SystemPowerControl
 import sys
+
+# These are the default resources that are subscribed to when connecting to the speaker by the BOSE app
+DEFAULT_SUBSCRIBE_RESOURCES = [
+  "/bluetooth/sink/list",
+  "/system/power/control",
+  "/audio/avSync",
+  "/bluetooth/source/list",
+  "/audio/bass",
+  "/device/assumed/TVs",
+  "/network/wifi/siteScan",
+  "/system/update/start",
+  "/system/update/status",
+  "/bluetooth/sink/macAddr",
+  "/content/nowPlaying/rating",
+  "/bluetooth/source/stopScan",
+  "/system/setup",
+  "/homekit/info",
+  "/bluetooth/source/pairStatus",
+  "/device/configuredDevices",
+  "/bluetooth/source/status",
+  "/cast/teardown",
+  "/bluetooth/sink/status",
+  "/cast/setup",
+  "/cec",
+  "/cloudSync",
+  "/system/challenge",
+  "/bluetooth/sink/remove",
+  "/bluetooth/source/connect",
+  "/remote/integration/brandList",
+  "/subscription",
+  "/network/status",
+  "/bluetooth/source/scanResult",
+  "/content/playbackRequest",
+  "/audio/eqSelect",
+  "/audio/height",
+  "/content/transportControl",
+  "/grouping/activeGroups",
+  "/audio/mode",
+  "/bluetooth/source/pair",
+  "/bluetooth/source/capability",
+  "/bluetooth/source/disconnect",
+  "/audio/subwooferGain",
+  "/voice/setup/start",
+  "/audio/center",
+  "/network/wifi/status",
+  "/content/nowPlaying/repeat",
+  "/system/sources",
+  "/content/nowPlaying",
+  "/system/power/macro",
+  "/bluetooth/sink/pairable",
+  "/network/wifi/profile",
+  "/cast/settings",
+  "/audio/zone",
+  "/content/nowPlaying/shuffle",
+  "/bluetooth/source/capabilitySettings",
+  "/remote/integration",
+  "/audio/surround",
+  "/accessories",
+  "/audio/treble",
+  "/adaptiq",
+  "/accessories/playTones",
+  "/system/power/timeouts",
+  "/audio/dualMonoSelect",
+  "/system/info",
+  "/system/sources/status",
+  "/audio/rebroadcastLatency/mode",
+  "/audio/format",
+  "/bluetooth/source/connectionStatus",
+  "/system/power/mode/opticalAutoWake",
+  "/content/nowPlaying/favorite",
+  "/system/productSettings",
+  "/bluetooth/sink/connectionStatus",
+  "/bluetooth/source/remove",
+  "/audio/autoVolume",
+  "/system/capabilities",
+  "/audio/volume/increment",
+  "/bluetooth/sink/connect",
+  "/bluetooth/source/volume",
+  "/bluetooth/sink/disconnect",
+  "/system/reset",
+  "/audio/volume/decrement",
+  "/audio/volume",
+  "/remote/integration/directEntry",
+  "/device/configure",
+  "/device/setup",
+  "/bluetooth/source/scan",
+  "/voice/settings",
+  "/system/activated"
+]
 
 
 class BoseSpeaker:
@@ -63,22 +152,25 @@ class BoseSpeaker:
         id = max(self._receivers.keys(), default=0) + 1
         self._receivers[id] = callback
         return id
-    
+
     def detach_receiver(self, id):
         """Detach from receiver."""
         self.receivers.pop(id, None)
 
-    async def _request(self, resource, method, body={}, withHeaders=False, waitForResponse=True):
+    async def _request(self, resource, method, body={}, withHeaders=False, waitForResponse=True, version = None):
         """Send a request and wait for the matching response."""
         token = self._control_token
         req_id = self._req_id
         self._req_id += 1
 
+        if version is None:
+            version = self._version
+
         message = {
             "body": body,
             "header": {
                 "token": token,
-                "version": self._version,
+                "version": version,
                 "reqID": req_id,
                 "resource": resource,
                 "device": self._device_id,
@@ -97,12 +189,14 @@ class BoseSpeaker:
         # Wait for response with matching reqID
         if not waitForResponse:
             return
-          
+
         # TODO: Refactor from polling to event-driven
         while True:
             for response in self._responses:
                 if response["header"]["reqID"] == req_id:
                     self._responses.remove(response)
+                    if "status" in response["header"] and response["header"]["status"] != 200:
+                        raise Exception(f"Request failed with status {response['header']['status']}")
                     if not withHeaders:
                       return response["body"]
                     return response
@@ -115,11 +209,12 @@ class BoseSpeaker:
                 message = await self._websocket.recv()
                 logging.debug(f"Received message: {message}")
                 parsed_message = json.loads(message)
-                
+
                 if "header" in parsed_message and "device" in parsed_message["header"] and self._device_id is None:
                     self._device_id = parsed_message["header"]["device"]
                     while not self._message_queue.empty():
                         message = await self._message_queue.get()
+                        message["header"]["device"] = self._device_id
                         await self._websocket.send(json.dumps(message))
                         logging.debug(f"Sent queued message: {json.dumps(message, indent=4)}")
 
@@ -134,28 +229,28 @@ class BoseSpeaker:
             if not self._stop_event.is_set():
                 logging.error(f"Error in receiver loop: {e}")
 
-    async def get_system_info(self) -> BoseResponse.SystemInfo:
+    async def get_system_info(self) -> SystemInfo:
         """Get system info."""
-        return BoseResponse.SystemInfo(await self._request("/system/info", "GET"))
+        return SystemInfo(await self._request("/system/info", "GET"))
 
-    async def get_audio_volume(self) -> BoseResponse.AudioVolume:
+    async def get_audio_volume(self) -> AudioVolume:
         """Get the current audio volume."""
-        return BoseResponse.AudioVolume(await self._request("/audio/volume", "GET"))
+        return AudioVolume(await self._request("/audio/volume", "GET"))
 
-    async def set_audio_volume(self, volume) -> BoseResponse.AudioVolume:
+    async def set_audio_volume(self, volume) -> AudioVolume:
         """Set the audio volume."""
         body = {"value": volume}
-        return BoseResponse.AudioVolume(await self._request("/audio/volume", "PUT", body))
+        return AudioVolume(await self._request("/audio/volume", "PUT", body))
 
-    async def get_now_playing(self) -> BoseResponse.ContentNowPlaying:
+    async def get_now_playing(self) -> ContentNowPlaying:
         """Get the current playing content."""
-        return BoseResponse.ContentNowPlaying(await self._request("/content/nowPlaying", "GET"))
+        return ContentNowPlaying(await self._request("/content/nowPlaying", "GET"))
 
     async def get_bluetooth_status(self):
         """Get the Bluetooth status."""
         return await self._request("/bluetooth/source/status", "GET")
 
-    async def get_power_state(self) -> BoseResponse.SystemPowerControl:
+    async def get_power_state(self) -> SystemPowerControl:
         """Get the power state of the device."""
         return await self._request("/system/power/control", "GET")
 
@@ -164,26 +259,35 @@ class BoseSpeaker:
         body = {"power": "ON" if state else "OFF"}
         await self._request("/system/power/control", "POST", body)
 
-    async def _control_transport(self, control: str) -> BoseResponse.ContentNowPlaying:
+    async def _control_transport(self, control: str) -> ContentNowPlaying:
         """Control the transport."""
-        body = {"control": control}
-        return BoseResponse.ContentNowPlaying(await self._request("/content/transportControl", "POST", body))
+        body = {"state": control}
+        return ContentNowPlaying(await self._request("/content/transportControl", "PUT", body))
 
-    async def pause(self) -> BoseResponse.ContentNowPlaying:
+    async def pause(self) -> ContentNowPlaying:
         """Pause the current content."""
         return await self._control_transport("PAUSE")
-      
-    async def play(self) -> BoseResponse.ContentNowPlaying:
+
+    async def play(self) -> ContentNowPlaying:
         """Play the current content."""
         return await self._control_transport("PLAY")
-      
-    async def skip_next(self) -> BoseResponse.ContentNowPlaying:
+
+    async def skip_next(self) -> ContentNowPlaying:
         """Skip to the next content."""
-        return await self._control_transport("SKIP_NEXT")
-      
-    async def skip_previous(self) -> BoseResponse.ContentNowPlaying:
+        return await self._control_transport("SKIPNEXT")
+
+    async def skip_previous(self) -> ContentNowPlaying:
         """Skip to the previous content."""
-        return await self._control_transport("SKIP_PREVIOUS")
+        return await self._control_transport("SKIPPREVIOUS")
+
+    def get_device_id(self) -> str | None:
+        """Get the device ID."""
+        return self._device_id
+
+    async def subscribe(self, resources: list[str] = DEFAULT_SUBSCRIBE_RESOURCES):
+        """Subscribe to resources."""
+        body = {"notifications": [{"resource": resource, "version": 1} for resource in resources ]}
+        return await self._request("/subscription", "PUT", body, version=2)
 
 # EXAMPLE USAGE
 
@@ -193,35 +297,35 @@ async def main(control_token, device_id, host):
         device_id=device_id,
         host=host
     )
-    
+
     # Attach receiver for unsolicited messages
     bose.attach_receiver(lambda data: print(f"Received unsolicited message: {json.dumps(data, indent=4)}"))
-    
+
     # Connect to the speaker
     await bose.connect()
-    
+
     # Get system info
     response = await bose.get_system_info()
     print(response)
-    
+
     # Get audio volume
     response = await bose.get_audio_volume()
     print(response)
-    
+
     # Set get currently playing content
     response = await bose.get_now_playing()
     print(response)
-    
+
     # Safely disconnect from the speaker
     await bose.disconnect()
-    
-if __name__ == "__main__":  
+
+if __name__ == "__main__":
     if len(sys.argv) != 4:
         print("Usage: python {sys.argv[0]} <control_token> <device_id> <host>")
         sys.exit(1)
-    
+
     control_token = sys.argv[1]
     device_id = sys.argv[2]
     host = sys.argv[3]
-  
+
     asyncio.run(main(control_token, device_id, host))
