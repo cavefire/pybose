@@ -15,7 +15,7 @@ import logging
 from ssl import SSLContext, CERT_NONE
 import websockets
 from threading import Event
-from .BoseResponse import AudioVolume, ContentNowPlaying, SystemInfo, SystemPowerControl
+from .BoseResponse import AudioVolume, ContentNowPlaying, SystemInfo, SystemPowerControl, Sources, Audio
 import sys
 
 # These are the default resources that are subscribed to when connecting to the speaker by the BOSE app
@@ -225,9 +225,18 @@ class BoseSpeaker:
                     # Notify all receivers about the unsolicited message
                     for receiver in self._receivers.values():
                         receiver(parsed_message)
+
+        except websockets.ConnectionClosed:
+            logging.warning("WebSocket connection lost. Attempting to reconnect...")
+            await self.connect()
+            return
         except Exception as e:
             if not self._stop_event.is_set():
                 logging.error(f"Error in receiver loop: {e}")
+
+    async def get_capabilities(self):
+        """Get the capabilities of the device."""
+        return await self._request("/system/capabilities", "GET")
 
     async def get_system_info(self) -> SystemInfo:
         """Get system info."""
@@ -289,13 +298,36 @@ class BoseSpeaker:
         body = {"notifications": [{"resource": resource, "version": 1} for resource in resources ]}
         return await self._request("/subscription", "PUT", body, version=2)
 
-    async def switch_tv_source(self):
+    async def switch_tv_source(self) -> ContentNowPlaying:
         """Switch to TV source."""
-        body = {
-            "source": "PRODUCT",
-            "sourceAccount": "TV"
-        }
-        return await self._request("/content/playbackRequest", "POST", body)
+        return await self.set_source("PRODUCT", "TV")
+
+    async def set_source(self, source, sourceAccount) -> ContentNowPlaying:
+        """Set the source."""
+        return ContentNowPlaying(await self._request("/content/playbackRequest", "POST", {
+            "source": source,
+            "sourceAccount": sourceAccount
+        }))
+
+    async def get_sources(self):
+        """Get the sources."""
+        return Sources(await self._request("/system/sources", "GET"))
+
+    async def get_audio_setting(self, option) -> Audio:
+        """Get the audio setting."""
+        if option not in ["bass", "treble", "center"]:
+            raise Exception(f"Invalid audio setting: {option}")
+        return Audio(await self._request("/audio/" + option, "GET"))
+
+    async def set_audio_setting(self, option, value) -> Audio:
+        """Get the audio setting."""
+        # TODO: Here should me more options like "center" ...
+        if option not in ["bass", "treble", "center"]:
+            raise Exception(f"Invalid audio setting: {option}")
+
+        return Audio(await self._request("/audio/" + option, "POST", {
+            "value": int(value)
+        }))
 
 # EXAMPLE USAGE
 

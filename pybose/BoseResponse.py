@@ -133,3 +133,48 @@ class SystemPowerControl:
   """
   def __init__(self, data):
     self.power = data.get("power")
+
+class Sources:
+  def __init__(self, data):
+    self.properties = self.Properties(data.get("properties"))
+    self.sources = [self.Source(source) for source in data.get("sources")]
+
+  class Properties:
+    def __init__(self, data):
+      self.supportedActivationKeys = data.get("supportedActivationKeys")
+      self.supportedDeviceTypes = data.get("supportedDeviceTypes")
+      self.supportedFriendlyNames = data.get("supportedFriendlyNames")
+      self.supportedInputRoutes = data.get("supportedInputRoutes")
+
+  class Source:
+    def __init__(self, data):
+      self.accountId = data.get("accountId")
+      self.displayName = data.get("displayName")
+      self.local = data.get("local")
+      self.multiroom = data.get("multiroom")
+      self.sourceAccountName = data.get("sourceAccountName")
+      self.sourceName = data.get("sourceName")
+      self.status = data.get("status")
+      self.visible = data.get("visible")
+
+  def __str__(self):
+    return f"{self.sourceName} - {self.status}"
+
+class Audio:
+  def __init__(self, data):
+    self.persistence = data.get("persistence")
+    self.properties = self.Properties(data.get("properties"))
+    self.value = data.get("value")
+
+  class Properties:
+    def __init__(self, data):
+      self.max = data.get("max")
+      self.min = data.get("min")
+      self.step = data.get("step")
+      self.supportedPersistence = data.get("supportedPersistence")
+
+    def __str__(self):
+      return f"{self.min} - {self.max} - {self.step}"
+
+  def __str__(self):
+    return f"{self.value}"
