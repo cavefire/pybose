@@ -1,6 +1,7 @@
 import requests
 import time
 import json
+import logging
 import sys
 import jwt
 from .GSSDK import GSRequest, SigUtils
@@ -34,6 +35,7 @@ class BoseAuth:
         """
         Start a session and get the GMID and UCID
         """
+        logging.debug("Getting GMID and UCID")
 
         url = "https://socialize.us1.gigya.com/socialize.getSDKConfig"
         data = {
@@ -44,7 +46,13 @@ class BoseAuth:
             "sdk": "ios_swift_1.0.8",
             "targetEnv": "mobile"
         }
-        response = requests.post(url, data=data, verify=False).json()
+        try:
+            response = requests.post(url, data=data, verify=False).json()
+        except Exception as e:
+            logging.error(f"Error getting GMID and UCID: {e}")
+            return None
+        
+        logging.debug(f"_get_ids: {json.dumps(response, indent=4)}")
         return {
             "gmid": response.get("ids", {}).get("gmid"),
             "ucid": response.get("ids", {}).get("ucid"),
@@ -55,6 +63,7 @@ class BoseAuth:
         Login to Gigya
         """
 
+        logging.debug(f"Logging in with {email}, gmid {gmid}, ucid {ucid}")
         url = 'https://accounts.us1.gigya.com/accounts.login'
         headers = {
             'Host': 'accounts.us1.gigya.com',
@@ -83,8 +92,13 @@ class BoseAuth:
             'ucid': ucid,
         }
         response = requests.post(url, headers=headers, data=data, verify=False)
+
+        
         if response.status_code == 200:
             json_response = response.json()
+            logging.debug("WARNING! CONFIDENTIAL INFORMATION! REMOVE AT LEAST THE session_secret AND UIDSignature FROM THE LOGS!")
+            logging.debug(f"_login: {json.dumps(json_response, indent=4)}")
+            logging.debug("END OF CONFIDENTIAL INFORMATION!")
             return {
                 "session_token": json_response.get("sessionInfo", {}).get("sessionToken"),
                 "session_secret": json_response.get("sessionInfo", {}).get("sessionSecret"),
@@ -129,7 +143,14 @@ class BoseAuth:
         sig = SigUtils.calcSignature(base_string, user['session_secret'])
         params['sig'] = sig
 
-        response = requests.post(url, headers=headers, data=params, verify=False).json()
+        try:
+            logging.debug("WAARNING! CONFIDENTIAL INFORMATION!")
+            response = requests.post(url, headers=headers, data=params, verify=False).json()
+            logging.debug(f"_get_jwt: {json.dumps(response, indent=4)}")
+            logging.debug("END OF CONFIDENTIAL INFORMATION!")
+        except Exception as e:
+            logging.error(f"Error getting JWT: {e}")
+            return None
         return response.get("id_token")
 
     def _fetch_keys(self, gigya_jwt, signature_timestamp, uid, uid_signature):
@@ -153,7 +174,14 @@ class BoseAuth:
             "client_id": self.BOSE_API_KEY
         }
 
-        response = requests.post(url, headers=headers, json=data, verify=False).json()
+        try:
+            response = requests.post(url, headers=headers, json=data, verify=False).json()
+            logging.debug("WARNING! CONFIDENTIAL INFORMATION!")
+            logging.debug(f"_fetch_keys: {json.dumps(response, indent=4)}")
+            logging.debug("END OF CONFIDENTIAL INFORMATION!")
+        except Exception as e:
+            logging.error(f"Error fetching keys: {e}")
+            return None
         return response
 
     def is_token_valid(self, token):
