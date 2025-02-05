@@ -178,3 +178,30 @@ class Audio:
 
   def __str__(self):
     return f"{self.value}"
+  
+class Accessories:
+  def __init__(self, data):
+    self.controllable = self.Controllable(data.get("controllable"))
+    self.enabled = self.Enabled(data.get("enabled"))
+    self.pairing = data.get("pairing")
+    self.rears = [self.Accessory(rear) for rear in data.get("rears")] if data.get("rears") else []
+    self.subs = [self.Accessory(sub) for sub in data.get("subs")] if data.get("subs") else []
+
+  class Controllable:
+    def __init__(self, data):
+      self.rears = data.get("rears")
+      self.subs = data.get("subs")
+
+  class Enabled:
+    def __init__(self, data):
+      self.rears = data.get("rears")
+      self.subs = data.get("subs")
+
+  class Accessory:
+    def __init__(self, data):
+      self.available = data.get("available")
+      self.configurationStatus = data.get("configurationStatus")
+      self.serialnum = data.get("serialnum")
+      self.type = data.get("type")
+      self.version = data.get("version")
+      self.wireless = data.get("wireless")

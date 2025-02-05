@@ -15,7 +15,7 @@ import logging
 from ssl import SSLContext, CERT_NONE
 import websockets
 from threading import Event
-from .BoseResponse import AudioVolume, ContentNowPlaying, SystemInfo, SystemPowerControl, Sources, Audio
+from .BoseResponse import AudioVolume, ContentNowPlaying, SystemInfo, SystemPowerControl, Sources, Audio, Accessories
 import sys
 
 # These are the default resources that are subscribed to when connecting to the speaker by the BOSE app
@@ -124,6 +124,7 @@ class BoseSpeaker:
         self._stop_event = Event()
         self._receiver_task = None
         self._receivers = {}
+        self._subscribed_resources = []
         self._message_queue = asyncio.Queue()
 
     async def connect(self):
@@ -137,6 +138,9 @@ class BoseSpeaker:
 
         self._stop_event.clear()
         self._receiver_task = asyncio.create_task(self._receiver_loop())
+        if len(self._subscribed_resources) > 0:
+            logging.debug("Subscribing to resources from previous session.")
+            await self.subscribe(self._subscribed_resources)
 
     async def disconnect(self):
         """Stop the receiver task and close the WebSocket."""
@@ -183,6 +187,9 @@ class BoseSpeaker:
             await self._message_queue.put(message)
             logging.debug(f"Waiting for deviceID. Queued message: {json.dumps(message, indent=4)}")
         else:
+            if self._websocket is None or self._websocket.close_code is not None:
+                logging.warning("WebSocket connection is closed. Reconnecting before sending message.")
+                await self.connect()
             await self._websocket.send(json.dumps(message))
             logging.debug(f"Sent message: {json.dumps(message, indent=4)}")
 
@@ -228,7 +235,7 @@ class BoseSpeaker:
 
         except websockets.ConnectionClosed:
             logging.warning("WebSocket connection lost. Attempting to reconnect...")
-            await self.connect()
+            await self.connect()  # Reconnect if the connection is lost
             return
         except Exception as e:
             if not self._stop_event.is_set():
@@ -296,18 +303,20 @@ class BoseSpeaker:
     async def subscribe(self, resources: list[str] = DEFAULT_SUBSCRIBE_RESOURCES):
         """Subscribe to resources."""
         body = {"notifications": [{"resource": resource, "version": 1} for resource in resources ]}
+        self._subscribed_resources = resources
         return await self._request("/subscription", "PUT", body, version=2)
 
     async def switch_tv_source(self) -> ContentNowPlaying:
         """Switch to TV source."""
-        return await self.set_source("PRODUCT", "TV")
+        return await set_source("PRODUCT", "TV")
 
     async def set_source(self, source, sourceAccount) -> ContentNowPlaying:
         """Set the source."""
-        return ContentNowPlaying(await self._request("/content/playbackRequest", "POST", {
+        body = {
             "source": source,
             "sourceAccount": sourceAccount
-        }))
+        }
+        return ContentNowPlaying(await self._request("/content/playbackRequest", "POST", body))
 
     async def get_sources(self):
         """Get the sources."""
@@ -315,19 +324,24 @@ class BoseSpeaker:
 
     async def get_audio_setting(self, option) -> Audio:
         """Get the audio setting."""
-        if option not in ["bass", "treble", "center"]:
+        # TODO: load from capabilities
+        if option not in ["bass", "treble", "center", "subwooferGain", "height", "avSync"]:
             raise Exception(f"Invalid audio setting: {option}")
         return Audio(await self._request("/audio/" + option, "GET"))
 
     async def set_audio_setting(self, option, value) -> Audio:
         """Get the audio setting."""
-        # TODO: Here should me more options like "center" ...
-        if option not in ["bass", "treble", "center"]:
+        # TODO: load from capabilities
+        if option not in ["bass", "treble", "center", "subwooferGain", "height", "avSync"]:
             raise Exception(f"Invalid audio setting: {option}")
 
         return Audio(await self._request("/audio/" + option, "POST", {
             "value": int(value)
         }))
+
+    async def get_accessories(self) -> Accessories:
+        """Get the accessories."""
+        return Accessories(await self._request("/accessories", "GET"))
 
 # EXAMPLE USAGE
 
