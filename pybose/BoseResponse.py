@@ -233,7 +233,7 @@ class Battery:
     self.minutesToEmpty = data.get("minutesToEmpty")
     self.minutesToFull = data.get("minutesToFull")
     self.percent = data.get("percent")
-    self.sufficientChargerConnected = data.get("sufficientChargerConnected") == "true"
+    self.sufficientChargerConnected = data.get("sufficientChargerConnected")
     self.temperatureNormal = data.get("temperatureState") == "NORMAL"
     
   def __str__(self):
