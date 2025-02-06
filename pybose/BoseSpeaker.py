@@ -15,7 +15,7 @@ import logging
 from ssl import SSLContext, CERT_NONE
 import websockets
 from threading import Event
-from .BoseResponse import AudioVolume, ContentNowPlaying, SystemInfo, SystemPowerControl, Sources, Audio, Accessories
+from .BoseResponse import AudioVolume, ContentNowPlaying, SystemInfo, SystemPowerControl, Sources, Audio, Accessories, Battery
 import sys
 
 # These are the default resources that are subscribed to when connecting to the speaker by the BOSE app
@@ -308,7 +308,7 @@ class BoseSpeaker:
 
     async def switch_tv_source(self) -> ContentNowPlaying:
         """Switch to TV source."""
-        return await set_source("PRODUCT", "TV")
+        return await self.set_source("PRODUCT", "TV")
 
     async def set_source(self, source, sourceAccount) -> ContentNowPlaying:
         """Set the source."""
@@ -342,6 +342,11 @@ class BoseSpeaker:
     async def get_accessories(self) -> Accessories:
         """Get the accessories."""
         return Accessories(await self._request("/accessories", "GET"))
+
+    async def get_battery_status(self) -> Battery:
+        """Get the battery status."""
+        return Battery(await self._request("/accessories", "GET"))
+        
 
 # EXAMPLE USAGE
 

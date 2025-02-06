@@ -205,3 +205,36 @@ class Accessories:
       self.type = data.get("type")
       self.version = data.get("version")
       self.wireless = data.get("wireless")
+      
+class Battery:
+  """{
+    "chargeStatus": "DISCHARGING",
+    "chargerConnected": "DISCONNECTED",
+    "minutesToEmpty": 433,
+    "minutesToFull": 65535,
+    "percent": 42,
+    "sufficientChargerConnected": false,
+    "temperatureState": "NORMAL"
+  }
+  
+  {
+    "chargeStatus": "CHARGING",
+    "chargerConnected": "CONNECTED",
+    "minutesToEmpty": 441,
+    "minutesToFull": 65535,
+    "percent": 42,
+    "sufficientChargerConnected": true,
+    "temperatureState": "NORMAL"
+  }""" 
+  
+  def __init__(self, data):    
+    self.charging = data.get("chargeStatus") == "CHARGING"
+    self.chargerConnected = data.get("chargerConnected") == "CONNECTED"
+    self.minutesToEmpty = data.get("minutesToEmpty")
+    self.minutesToFull = data.get("minutesToFull")
+    self.percent = data.get("percent")
+    self.sufficientChargerConnected = data.get("sufficientChargerConnected") == "true"
+    self.temperatureNormal = data.get("temperatureState") == "NORMAL"
+    
+  def __str__(self):
+    return f"{self.percent}%"
