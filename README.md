@@ -17,6 +17,9 @@ Currently supported functionalities:
 ### Tested Devices
 - Bose Soundbar Ultra
 - Bose Soundbar 900
+- Bose Music Amplifier
+- Bose Soundbar 700
+- Bose Portable Speaker
 
 Other Bose devices may also work, but they have not been tested.
 
@@ -80,6 +83,7 @@ await bose.disconnect()
 ```
 
 After attaching to the speaker, you can use the following functions:
+* get_capabilities
 * get_system_info
 * get_audio_volume
 * set_audio_volume
@@ -91,8 +95,15 @@ After attaching to the speaker, you can use the following functions:
 * play
 * skip_next
 * skip_previous
+* get_device_id
 * subscribe
 * switch_tv_source
+* set_source
+* get_sources
+* get_audio_settings
+* set_audio_settings
+* get_accessories
+* get_battery_status
 
 **Note:** The device supports much more. But for now, these are the only functions implemented. Feel free to add more, or open an issue if you have a specific need.
 
@@ -116,9 +127,9 @@ The first item on my wishlist is a **Homeassistant** integration. I am currently
 
 - [ ] Implement token refresh
 - [ ] Implement groups
-- [x] Implement source (TV) switching
+- [x] Implement source (TV / Optical / AUX) switching
 - [ ] Implement source (Bluetooth) switching
-- [ ] Implement equalizer settings
+- [x] Implement equalizer settings
 - [ ] Implement bass module settings
 - [ ] Implement surround speaker settings
 
