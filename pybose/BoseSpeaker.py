@@ -345,7 +345,7 @@ class BoseSpeaker:
 
     async def get_battery_status(self) -> Battery:
         """Get the battery status."""
-        return Battery(await self._request("/accessories", "GET"))
+        return Battery(await self._request("/system/battery", "GET"))
         
 
 # EXAMPLE USAGE
