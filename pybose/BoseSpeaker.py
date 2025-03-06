@@ -15,7 +15,7 @@ import logging
 from ssl import SSLContext, CERT_NONE
 import websockets
 from threading import Event
-from .BoseResponse import AudioVolume, ContentNowPlaying, SystemInfo, SystemPowerControl, Sources, Audio, Accessories, Battery
+from .BoseResponse import AudioVolume, ContentNowPlaying, SystemInfo, SystemPowerControl, Sources, Audio, Accessories, Battery, Preset
 import sys
 
 # These are the default resources that are subscribed to when connecting to the speaker by the BOSE app
@@ -203,7 +203,7 @@ class BoseSpeaker:
                 if response["header"]["reqID"] == req_id:
                     self._responses.remove(response)
                     if "status" in response["header"] and response["header"]["status"] != 200:
-                        raise Exception(f"Request failed with status {response['header']['status']}")
+                        raise Exception(f"Request failed with status {response['header']['status']} and content: {response['body']}")
                     if not withHeaders:
                       return response["body"]
                     return response
@@ -295,7 +295,23 @@ class BoseSpeaker:
     async def skip_previous(self) -> ContentNowPlaying:
         """Skip to the previous content."""
         return await self._control_transport("SKIPPREVIOUS")
-
+    
+    async def request_playback_preset(self, preset: Preset, initiator_id: str) -> bool:
+        """Request a playback preset."""
+        content_item = preset.get("actions")[0].get("payload").get("contentItem")
+        return await self._request("/content/playbackRequest", "POST", {
+            "source": content_item.get("source"),
+            "initiatorID": initiator_id,
+            "sourceAccount": content_item.get("sourceAccount"),
+            "preset": {
+                "location": content_item.get("location"),
+                "name": content_item.get("name"),
+                "containerArt": content_item.get("containerArt"),
+                "presetable": content_item.get("presetable"),
+                "type": content_item.get("type"),
+            }
+        })
+        
     def get_device_id(self) -> str | None:
         """Get the device ID."""
         return self._device_id
