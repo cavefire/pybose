@@ -342,6 +342,22 @@ class BoseSpeaker:
     async def get_accessories(self) -> Accessories:
         """Get the accessories."""
         return Accessories(await self._request("/accessories", "GET"))
+    
+    async def put_accessories(self, subs_enabled = None, rears_enabled = None) -> bool:
+        if subs_enabled is None and rears_enabled is None:
+            accessories = await self.get_accessories()
+            if subs_enabled is None:
+                subs_enabled = accessories.enabled.subs
+            if rears_enabled is None:
+                rears_enabled = accessories.enabled.rears
+        
+        body = {
+            "enabled": {
+                "rears": rears_enabled,
+                "subs": subs_enabled
+            }
+        }
+        return await self._request("/accessories", "PUT", body)
 
     async def get_battery_status(self) -> Battery:
         """Get the battery status."""
