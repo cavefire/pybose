@@ -5,6 +5,7 @@ import logging
 import sys
 import jwt
 from .GSSDK import GSRequest, SigUtils
+from .BoseResponse import BoseApiProduct
 
 """
 ALL API KEYS ARE PUBLICLY AVAILABLE ON THE BOSE WEBSITE
@@ -47,7 +48,7 @@ class BoseAuth:
             "targetEnv": "mobile"
         }
         try:
-            response = requests.post(url, data=data, verify=False).json()
+            response = requests.post(url, data=data).json()
         except Exception as e:
             logging.error(f"Error getting GMID and UCID: {e}")
             return None
@@ -91,7 +92,7 @@ class BoseAuth:
             'targetEnv': 'mobile',
             'ucid': ucid,
         }
-        response = requests.post(url, headers=headers, data=data, verify=False)
+        response = requests.post(url, headers=headers, data=data)
 
         
         if response.status_code == 200:
@@ -145,7 +146,7 @@ class BoseAuth:
 
         try:
             logging.debug("WAARNING! CONFIDENTIAL INFORMATION!")
-            response = requests.post(url, headers=headers, data=params, verify=False).json()
+            response = requests.post(url, headers=headers, data=params).json()
             logging.debug(f"_get_jwt: {json.dumps(response, indent=4)}")
             logging.debug("END OF CONFIDENTIAL INFORMATION!")
         except Exception as e:
@@ -175,7 +176,7 @@ class BoseAuth:
         }
 
         try:
-            response = requests.post(url, headers=headers, json=data, verify=False).json()
+            response = requests.post(url, headers=headers, json=data).json()
             logging.debug("WARNING! CONFIDENTIAL INFORMATION!")
             logging.debug(f"_fetch_keys: {json.dumps(response, indent=4)}")
             logging.debug("END OF CONFIDENTIAL INFORMATION!")
@@ -221,6 +222,24 @@ class BoseAuth:
             "access_token": self._control_token.get("access_token"),
             "refresh_token": self._control_token.get("refresh_token"),
         }
+        
+    def fetchProductInformation(self, gwid) -> BoseApiProduct:
+        url = "https://users.api.bose.io/passport-core/products/{}".format(gwid)
+        headers = {
+            "X-ApiKey": self.BOSE_API_KEY,
+            "X-Software-Version": "10.6.6-32768",
+            "X-Api-Version": "1",
+            "User-Agent": "MadridApp/10.6.6 (com.bose.bosemusic; build:32768; iOS 18.3.0) Alamofire/5.6.2",
+            "X-User-Token": self._control_token.get("access_token")
+        }
+
+        try:
+            response = requests.get(url, headers=headers).json()
+            logging.debug(f"product info: {json.dumps(response, indent=4)}")
+        except Exception as e:
+            logging.error(f"Error fetching keys: {e}")
+            return None
+        return BoseApiProduct(**response)
 
 # EXAMPLE USAGE
 
