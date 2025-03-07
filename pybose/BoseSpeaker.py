@@ -25,6 +25,9 @@ from .BoseResponse import (
     Accessories,
     Battery,
     Preset,
+    AudioMode,
+    DualMonoSettings,
+    RebroadcastLatencyMode,
 )
 import sys
 
@@ -177,7 +180,7 @@ class BoseSpeaker:
         withHeaders=False,
         waitForResponse=True,
         version=None,
-    ):
+    ) -> dict:
         """Send a request and wait for the matching response."""
         token = self._control_token
         req_id = self._req_id
@@ -227,7 +230,7 @@ class BoseSpeaker:
                         and response["header"]["status"] != 200
                     ):
                         raise Exception(
-                            f"Request failed with status {response['header']['status']} and content: {response['body']}"
+                            f"Request failed with status {response['header']['status']}"
                         )
                     if not withHeaders:
                         return response["body"]
@@ -427,6 +430,41 @@ class BoseSpeaker:
     async def get_battery_status(self) -> Battery:
         """Get the battery status."""
         return Battery(await self._request("/system/battery", "GET"))
+
+    async def get_audio_mode(self) -> AudioMode:
+        """Get the audio mode."""
+        return AudioMode(await self._request("/audio/mode", "GET"))
+
+    async def set_audio_mode(self, mode) -> bool:
+        """Set the audio mode."""
+        result = await self._request("/audio/mode", "POST", {"value": mode})
+        if result.get("value") == mode:
+            return True
+        return False
+
+    async def get_dual_mono_setting(self) -> DualMonoSettings:
+        """Get the dual mono setting."""
+        return DualMonoSettings(await self._request("/audio/dualMonoSelect", "GET"))
+
+    async def set_dual_mono_setting(self, value) -> bool:
+        """Set the dual mono setting."""
+        result = await self._request("/audio/dualMonoSelect", "POST", {"value": value})
+        if result.get("value") == value:
+            return True
+        return False
+
+    async def get_rebroadcast_latency_mode(self) -> RebroadcastLatencyMode:
+        """Get the rebroadcast latency mode."""
+        return await self._request("/audio/rebroadcastLatency/mode", "GET")
+
+    async def set_rebroadcast_latency_mode(self, mode) -> bool:
+        """Set the rebroadcast latency mode."""
+        result = await self._request(
+            "/audio/rebroadcastLatency/mode", "PUT", {"mode": mode}
+        )
+        if result.get("value") == mode:
+            return True
+        return False
 
 
 # EXAMPLE USAGE

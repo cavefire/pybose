@@ -179,7 +179,40 @@ class Battery(TypedDict, total=False):
     temperatureState: str
 
 
+# AudioMode
+class AudioModeProperties(TypedDict, total=False):
+    supportedPersistence: List[str]
+    supportedValues: List[str]
+
+
+class AudioMode(TypedDict):
+    persistence: str
+    properties: AudioModeProperties
+    value: str
+
+
+# Dual Mono Settings
+class DualMonoSettingsProperties(TypedDict, total=False):
+    supportedValues: List[str]
+
+
+class DualMonoSettings(TypedDict):
+    value: str
+    properties: DualMonoSettingsProperties
+
+
+# Rebroadcast Latency Mode
+class RebroadcastLatencyModeProperties(TypedDict, total=False):
+    supportedModes: List[str]
+
+
+class RebroadcastLatencyMode(TypedDict):
+    mode: str
+    properties: RebroadcastLatencyModeProperties
+
+
 """Bose cloud api responses:"""
+
 
 # V4V Input
 class V4VInput(TypedDict):
