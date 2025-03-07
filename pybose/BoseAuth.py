@@ -210,7 +210,7 @@ class BoseAuth:
             return False
 
     # TODO: Implement refresh token
-    def getControlToken(self, email, password, forceNew=False):
+    def getControlToken(self, email=None, password=None, forceNew=False):
         """
         Get the control token to access the local speaker API
         """
@@ -222,10 +222,18 @@ class BoseAuth:
                     "refresh_token": self._control_token.get("refresh_token"),
                 }
 
+        if email is not None:
+            self._email = email
+        if password is not None:
+            self._password = password
+
+        if self._email is None or self._password is None:
+            raise ValueError("Email and password are required for the first call!")
+
         ids = self._get_ids()
         gmid, ucid = ids["gmid"], ids["ucid"]
 
-        user = self._login(email, password, gmid, ucid)
+        user = self._login(self._email, self._password, gmid, ucid)
         gigya_jwt = self._get_jwt(user, gmid, ucid)
 
         self._control_token = self._fetch_keys(
