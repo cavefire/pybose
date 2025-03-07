@@ -332,6 +332,11 @@ class BoseSpeaker:
         """Skip to the previous content."""
         return await self._control_transport("SKIPPREVIOUS")
 
+    async def seek(self, position):
+        """Seek to position (in seconds)."""
+        body = {"position": position, "state": "SEEK"}
+        return await self._request("/content/transportControl", "PUT", body)
+
     async def request_playback_preset(self, preset: Preset, initiator_id: str) -> bool:
         """Request a playback preset."""
         content_item = preset.get("actions")[0].get("payload").get("contentItem")
