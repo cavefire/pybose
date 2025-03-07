@@ -211,6 +211,35 @@ class RebroadcastLatencyMode(TypedDict):
     properties: RebroadcastLatencyModeProperties
 
 
+# Active Groups
+class ProductStateEnum(enumerate):
+    WAITING = "WAITING"
+    MASTER = "MASTER"
+
+
+class ProductState(TypedDict):
+    productId: str
+    status: ProductStateEnum
+
+
+class ProductRoleEnum(enumerate):
+    NORMAL = "NORMAL"
+
+
+class Product(TypedDict):
+    productId: str
+    role: ProductRoleEnum
+
+
+class ActiveGroup(TypedDict):
+    activeGroupId: str
+    groupMasterId: str
+    # groups: List[???]
+    name: str
+    productStates: List[ProductState]
+    products: List[Product]
+
+
 """Bose cloud api responses:"""
 
 

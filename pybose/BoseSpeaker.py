@@ -16,6 +16,7 @@ from ssl import SSLContext, CERT_NONE
 import websockets
 from threading import Event
 from .BoseResponse import (
+    ActiveGroup,
     AudioVolume,
     ContentNowPlaying,
     SystemInfo,
@@ -230,7 +231,13 @@ class BoseSpeaker:
                         and response["header"]["status"] != 200
                     ):
                         raise Exception(
-                            f"Request failed with status {response['header']['status']}"
+                            f"Request failed with status {response['header']['status']}",
+                            response["error"]["code"]
+                            if response["header"]["status"] == 500
+                            else response["header"]["status"],
+                            response["error"]["message"]
+                            if response["header"]["status"] == 500
+                            else None,
                         )
                     if not withHeaders:
                         return response["body"]
@@ -470,6 +477,61 @@ class BoseSpeaker:
         if result.get("value") == mode:
             return True
         return False
+
+    async def get_active_groups(self) -> list[ActiveGroup]:
+        """Get the active groups."""
+
+        groups = await self._request("/grouping/activeGroups", "GET")
+
+        return [ActiveGroup(group) for group in groups.get("activeGroups", [])]
+
+    async def set_active_group(self, other_product_ids: list[str]) -> bool:
+        """Set the active group."""
+
+        body = {"products": [{"productId": self._device_id, "role": "NORMAL"}]}
+
+        # add other product ids to body
+        for product_id in other_product_ids:
+            body["products"].append({"productId": product_id, "role": "NORMAL"})
+
+        return await self._request("/grouping/activeGroups", "POST", body)
+
+    async def add_to_active_group(
+        self, active_group_id: str, other_product_ids: list[str]
+    ) -> bool:
+        """Add to the active group."""
+        body = {
+            "addProducts": [
+                {"productId": product_id, "role": "NORMAL"}
+                for product_id in other_product_ids
+            ],
+            "activeGroupId": active_group_id,
+            "addGroups": [],
+            "removeGroups": [],
+            "removeProducts": [],
+        }
+        return await self._request("/grouping/activeGroups", "PUT", body)
+
+    async def remove_from_active_group(
+        self, active_group_id: str, other_product_ids: list[str]
+    ) -> bool:
+        """Remove from the active group."""
+        body = {
+            "name": "",
+            "addProducts": [],
+            "activeGroupId": active_group_id,
+            "addGroups": [],
+            "removeGroups": [],
+            "removeProducts": [
+                {"productId": product_id, "role": "NORMAL"}
+                for product_id in other_product_ids
+            ],
+        }
+        return await self._request("/grouping/activeGroups", "PUT", body)
+
+    async def stop_active_groups(self) -> bool:
+        """Remove all active groups."""
+        return await self._request("/grouping/activeGroups", "DELETE")
 
 
 # EXAMPLE USAGE
