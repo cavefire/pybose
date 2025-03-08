@@ -268,7 +268,7 @@ class BoseSpeaker:
             if not self._stop_event.is_set():
                 logging.error(f"Error in receiver loop: {e}")
 
-    async def get_capabilities(self) -> BR.Capabilities
+    async def get_capabilities(self) -> BR.Capabilities:
         """Get the capabilities of the device."""
         return BR.Capabilities(await self._request("/system/capabilities", "GET"))
 
@@ -330,7 +330,9 @@ class BoseSpeaker:
         body = {"position": position, "state": "SEEK"}
         return await self._request("/content/transportControl", "PUT", body)
 
-    async def request_playback_preset(self, preset: BR.Preset, initiator_id: str) -> bool:
+    async def request_playback_preset(
+        self, preset: BR.Preset, initiator_id: str
+    ) -> bool:
         """Request a playback preset."""
         content_item = preset.get("actions")[0].get("payload").get("contentItem")
         return await self._request(
@@ -518,20 +520,30 @@ class BoseSpeaker:
     async def stop_active_groups(self) -> bool:
         """Remove all active groups."""
         return await self._request("/grouping/activeGroups", "DELETE")
-    
+
     async def get_system_timeout(self) -> BR.SystemTimeout:
         """Get the system timeout."""
         return BR.SystemTimeout(await self._request("/system/power/timeouts", "GET"))
-    
-    async def set_system_timeout(self, no_audio: bool, no_video: bool) -> BR.SystemTimeout:
+
+    async def set_system_timeout(
+        self, no_audio: bool, no_video: bool
+    ) -> BR.SystemTimeout:
         """Set the system timeout."""
-        return BR.SystemTimeout(await self._request("/system/power/timeouts", "PUT", {"noAudio": no_audio, "noVideo": no_video}))
+        return BR.SystemTimeout(
+            await self._request(
+                "/system/power/timeouts",
+                "PUT",
+                {"noAudio": no_audio, "noVideo": no_video},
+            )
+        )
 
     async def get_cec_settings(self) -> BR.CecSettings:
         """Get the CEC settings."""
         return BR.CecSettings(await self._request("/cec", "GET"))
-    
-    async def set_cec_settings(self, mode: BR.CecSettingsSupportedValuesEnum) -> BR.CecSettings:
+
+    async def set_cec_settings(
+        self, mode: BR.CecSettingsSupportedValuesEnum
+    ) -> BR.CecSettings:
         """Set the CEC settings."""
         return BR.CecSettings(await self._request("/cec", "PUT", {"mode": mode}))
 
