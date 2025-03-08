@@ -268,9 +268,9 @@ class BoseSpeaker:
             if not self._stop_event.is_set():
                 logging.error(f"Error in receiver loop: {e}")
 
-    async def get_capabilities(self):
+    async def get_capabilities(self) -> BR.Capabilities
         """Get the capabilities of the device."""
-        return await self._request("/system/capabilities", "GET")
+        return BR.Capabilities(await self._request("/system/capabilities", "GET"))
 
     async def get_system_info(self) -> BR.SystemInfo:
         """Get system info."""
@@ -518,6 +518,26 @@ class BoseSpeaker:
     async def stop_active_groups(self) -> bool:
         """Remove all active groups."""
         return await self._request("/grouping/activeGroups", "DELETE")
+    
+    async def get_system_timeout(self) -> BR.SystemTimeout:
+        """Get the system timeout."""
+        return BR.SystemTimeout(await self._request("/system/power/timeouts", "GET"))
+    
+    async def set_system_timeout(self, no_audio: bool, no_video: bool) -> BR.SystemTimeout:
+        """Set the system timeout."""
+        return BR.SystemTimeout(await self._request("/system/power/timeouts", "PUT", {"noAudio": no_audio, "noVideo": no_video}))
+
+    async def get_cec_settings(self) -> BR.CecSettings:
+        """Get the CEC settings."""
+        return BR.CecSettings(await self._request("/cec", "GET"))
+    
+    async def set_cec_settings(self, mode: BR.CecSettingsSupportedValuesEnum) -> BR.CecSettings:
+        """Set the CEC settings."""
+        return BR.CecSettings(await self._request("/cec", "PUT", {"mode": mode}))
+
+    async def get_product_settings(self) -> BR.ProductSettings:
+        """Get the product settings."""
+        return BR.ProductSettings(await self._request("/system/productSettings", "GET"))
 
 
 # EXAMPLE USAGE

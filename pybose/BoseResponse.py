@@ -1,6 +1,21 @@
 from typing import TypedDict, List, Optional, Dict
 
 
+# Capabilities
+class CapabilityEndpoint(TypedDict):
+    endpoint: str
+
+
+class CapabilityGroup(TypedDict):
+    apiGroup: str
+    endpoints: List[CapabilityEndpoint]
+    version: float
+
+
+class Capabilities(TypedDict):
+    group: CapabilityGroup
+
+
 # SystemInfo
 class SystemInfo(TypedDict):
     countryCode: str
@@ -240,20 +255,34 @@ class ActiveGroup(TypedDict):
     products: List[Product]
 
 
-"""Bose cloud api responses:"""
+# System timeout
+class SystemTimeout(TypedDict):
+    noAudio: bool
+    noVideo: bool
 
 
-# V4V Input
-class V4VInput(TypedDict):
-    input: str
-    nameID: str
+# CEC Settings
+class CecSettingsSupportedValuesEnum(enumerate):
+    ON = "ON"
+    OFF = "OFF"
+    ALTERNATE_ON = "ALTERNATE_ON"
+    ALTMODE_3 = "ALTMODE_3"
+    ALTMODE_4 = "ALTMODE_4"
+    ALTMODE_5 = "ALTMODE_5"
+    ALTMODE_6 = "ALTMODE_6"
+    ALTMODE_7 = "ALTMODE_7"
 
 
-class Attributes(TypedDict, total=False):
-    v4vInputs: List[V4VInput]
+class CecSettingsProperties(TypedDict, total=False):
+    supportedModes: List[CecSettingsSupportedValuesEnum]
 
 
-# Preset Metadata & Payload
+class CecSettings(TypedDict):
+    mode: CecSettingsSupportedValuesEnum
+    properties: CecSettingsProperties
+    
+
+# Product Settings
 class PresetMetadata(TypedDict):
     accountID: str
     image: str
@@ -271,78 +300,33 @@ class ContentItem(TypedDict):
     type: str
 
 
-class PresetPayload(TypedDict):
+class PresetActionPayload(TypedDict):
     contentItem: ContentItem
 
 
 class PresetAction(TypedDict):
     actionType: str
     metadata: PresetMetadata
-    payload: PresetPayload
+    payload: PresetActionPayload
 
 
 class Preset(TypedDict):
     actions: List[PresetAction]
 
 
-# Service Accounts & Tokens
-class ServiceAccountTokens(TypedDict, total=False):
-    refresh_token: str
-    refreshToken: str
-    tokenType: str
-
-
-class ServiceAccountAttributes(TypedDict, total=False):
-    alexaEnv: str
-    region: str
-    WuWModel: str
-    WuWord: str
-    email: str
-    language: str
-    isDefaultAccount: bool
-
-
-class ServiceAccount(TypedDict, total=False):
-    accountID: str
-    accountType: str
-    bosePersonID: str
-    createdOn: str
-    provider: str
-    providerAccountID: str
-    tokens: ServiceAccountTokens
-    updatedOn: str
-    attributes: Optional[ServiceAccountAttributes]
-    disabled: Optional[bool]
-    name: Optional[str]
-    productID: Optional[str]
-
-
-# Users
-class UserRole(TypedDict):
-    role: str
-    trustLevel: str
-
-
-# Settings
-class Settings(TypedDict):
-    language: str
-    name: str
-    sharingMode: str
-    timeFormat: str
-    timeZone: str
-
-
-# Main Data Structure
-class BoseApiProduct(TypedDict):
-    attributes: Attributes
-    createdOn: str
-    groups: List[str]
-    persons: Dict[str, str]
+class Presets(TypedDict):
     presets: Dict[str, Preset]
-    productColor: int
-    productID: str
-    productType: str
-    serviceAccounts: List[ServiceAccount]
-    settings: Settings
-    updatedOn: str
-    users: Dict[str, UserRole]
+
+
+class ProductProperties(TypedDict):
+    supportedLanguages: List[str]
+
+
+class ProductSettings(TypedDict):
+    language: str
+    ntpSyncDone: bool
+    presets: Presets
+    productName: str
+    properties: ProductProperties
+    timeformat: str
+    timezone: str
