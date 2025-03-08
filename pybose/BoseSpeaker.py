@@ -15,21 +15,7 @@ import logging
 from ssl import SSLContext, CERT_NONE
 import websockets
 from threading import Event
-from .BoseResponse import (
-    ActiveGroup,
-    AudioVolume,
-    ContentNowPlaying,
-    SystemInfo,
-    SystemPowerControl,
-    Sources,
-    Audio,
-    Accessories,
-    Battery,
-    Preset,
-    AudioMode,
-    DualMonoSettings,
-    RebroadcastLatencyMode,
-)
+from . import BoseResponse as BR
 import sys
 
 # These are the default resources that are subscribed to when connecting to the speaker by the BOSE app
@@ -286,28 +272,28 @@ class BoseSpeaker:
         """Get the capabilities of the device."""
         return await self._request("/system/capabilities", "GET")
 
-    async def get_system_info(self) -> SystemInfo:
+    async def get_system_info(self) -> BR.SystemInfo:
         """Get system info."""
-        return SystemInfo(await self._request("/system/info", "GET"))
+        return BR.SystemInfo(await self._request("/system/info", "GET"))
 
-    async def get_audio_volume(self) -> AudioVolume:
+    async def get_audio_volume(self) -> BR.AudioVolume:
         """Get the current audio volume."""
-        return AudioVolume(await self._request("/audio/volume", "GET"))
+        return BR.AudioVolume(await self._request("/audio/volume", "GET"))
 
-    async def set_audio_volume(self, volume) -> AudioVolume:
+    async def set_audio_volume(self, volume) -> BR.AudioVolume:
         """Set the audio volume."""
         body = {"value": volume}
-        return AudioVolume(await self._request("/audio/volume", "PUT", body))
+        return BR.AudioVolume(await self._request("/audio/volume", "PUT", body))
 
-    async def get_now_playing(self) -> ContentNowPlaying:
+    async def get_now_playing(self) -> BR.ContentNowPlaying:
         """Get the current playing content."""
-        return ContentNowPlaying(await self._request("/content/nowPlaying", "GET"))
+        return BR.ContentNowPlaying(await self._request("/content/nowPlaying", "GET"))
 
     async def get_bluetooth_status(self):
         """Get the Bluetooth status."""
         return await self._request("/bluetooth/source/status", "GET")
 
-    async def get_power_state(self) -> SystemPowerControl:
+    async def get_power_state(self) -> BR.SystemPowerControl:
         """Get the power state of the device."""
         return await self._request("/system/power/control", "GET")
 
@@ -316,26 +302,26 @@ class BoseSpeaker:
         body = {"power": "ON" if state else "OFF"}
         await self._request("/system/power/control", "POST", body)
 
-    async def _control_transport(self, control: str) -> ContentNowPlaying:
+    async def _control_transport(self, control: str) -> BR.ContentNowPlaying:
         """Control the transport."""
         body = {"state": control}
-        return ContentNowPlaying(
+        return BR.ContentNowPlaying(
             await self._request("/content/transportControl", "PUT", body)
         )
 
-    async def pause(self) -> ContentNowPlaying:
+    async def pause(self) -> BR.ContentNowPlaying:
         """Pause the current content."""
         return await self._control_transport("PAUSE")
 
-    async def play(self) -> ContentNowPlaying:
+    async def play(self) -> BR.ContentNowPlaying:
         """Play the current content."""
         return await self._control_transport("PLAY")
 
-    async def skip_next(self) -> ContentNowPlaying:
+    async def skip_next(self) -> BR.ContentNowPlaying:
         """Skip to the next content."""
         return await self._control_transport("SKIPNEXT")
 
-    async def skip_previous(self) -> ContentNowPlaying:
+    async def skip_previous(self) -> BR.ContentNowPlaying:
         """Skip to the previous content."""
         return await self._control_transport("SKIPPREVIOUS")
 
@@ -344,7 +330,7 @@ class BoseSpeaker:
         body = {"position": position, "state": "SEEK"}
         return await self._request("/content/transportControl", "PUT", body)
 
-    async def request_playback_preset(self, preset: Preset, initiator_id: str) -> bool:
+    async def request_playback_preset(self, preset: BR.Preset, initiator_id: str) -> bool:
         """Request a playback preset."""
         content_item = preset.get("actions")[0].get("payload").get("contentItem")
         return await self._request(
@@ -378,22 +364,22 @@ class BoseSpeaker:
         self._subscribed_resources = resources
         return await self._request("/subscription", "PUT", body, version=2)
 
-    async def switch_tv_source(self) -> ContentNowPlaying:
+    async def switch_tv_source(self) -> BR.ContentNowPlaying:
         """Switch to TV source."""
         return await self.set_source("PRODUCT", "TV")
 
-    async def set_source(self, source, sourceAccount) -> ContentNowPlaying:
+    async def set_source(self, source, sourceAccount) -> BR.ContentNowPlaying:
         """Set the source."""
         body = {"source": source, "sourceAccount": sourceAccount}
-        return ContentNowPlaying(
+        return BR.ContentNowPlaying(
             await self._request("/content/playbackRequest", "POST", body)
         )
 
     async def get_sources(self):
         """Get the sources."""
-        return Sources(await self._request("/system/sources", "GET"))
+        return BR.Sources(await self._request("/system/sources", "GET"))
 
-    async def get_audio_setting(self, option) -> Audio:
+    async def get_audio_setting(self, option) -> BR.Audio:
         """Get the audio setting."""
         # TODO: load from capabilities
         if option not in [
@@ -405,9 +391,9 @@ class BoseSpeaker:
             "avSync",
         ]:
             raise Exception(f"Invalid audio setting: {option}")
-        return Audio(await self._request("/audio/" + option, "GET"))
+        return BR.Audio(await self._request("/audio/" + option, "GET"))
 
-    async def set_audio_setting(self, option, value) -> Audio:
+    async def set_audio_setting(self, option, value) -> BR.Audio:
         """Get the audio setting."""
         # TODO: load from capabilities
         if option not in [
@@ -420,13 +406,13 @@ class BoseSpeaker:
         ]:
             raise Exception(f"Invalid audio setting: {option}")
 
-        return Audio(
+        return BR.Audio(
             await self._request("/audio/" + option, "POST", {"value": int(value)})
         )
 
-    async def get_accessories(self) -> Accessories:
+    async def get_accessories(self) -> BR.Accessories:
         """Get the accessories."""
-        return Accessories(await self._request("/accessories", "GET"))
+        return BR.Accessories(await self._request("/accessories", "GET"))
 
     async def put_accessories(self, subs_enabled=None, rears_enabled=None) -> bool:
         if subs_enabled is None and rears_enabled is None:
@@ -439,13 +425,13 @@ class BoseSpeaker:
         body = {"enabled": {"rears": rears_enabled, "subs": subs_enabled}}
         return await self._request("/accessories", "PUT", body)
 
-    async def get_battery_status(self) -> Battery:
+    async def get_battery_status(self) -> BR.Battery:
         """Get the battery status."""
-        return Battery(await self._request("/system/battery", "GET"))
+        return BR.Battery(await self._request("/system/battery", "GET"))
 
-    async def get_audio_mode(self) -> AudioMode:
+    async def get_audio_mode(self) -> BR.AudioMode:
         """Get the audio mode."""
-        return AudioMode(await self._request("/audio/mode", "GET"))
+        return BR.AudioMode(await self._request("/audio/mode", "GET"))
 
     async def set_audio_mode(self, mode) -> bool:
         """Set the audio mode."""
@@ -454,9 +440,9 @@ class BoseSpeaker:
             return True
         return False
 
-    async def get_dual_mono_setting(self) -> DualMonoSettings:
+    async def get_dual_mono_setting(self) -> BR.DualMonoSettings:
         """Get the dual mono setting."""
-        return DualMonoSettings(await self._request("/audio/dualMonoSelect", "GET"))
+        return BR.DualMonoSettings(await self._request("/audio/dualMonoSelect", "GET"))
 
     async def set_dual_mono_setting(self, value) -> bool:
         """Set the dual mono setting."""
@@ -465,7 +451,7 @@ class BoseSpeaker:
             return True
         return False
 
-    async def get_rebroadcast_latency_mode(self) -> RebroadcastLatencyMode:
+    async def get_rebroadcast_latency_mode(self) -> BR.RebroadcastLatencyMode:
         """Get the rebroadcast latency mode."""
         return await self._request("/audio/rebroadcastLatency/mode", "GET")
 
@@ -478,12 +464,12 @@ class BoseSpeaker:
             return True
         return False
 
-    async def get_active_groups(self) -> list[ActiveGroup]:
+    async def get_active_groups(self) -> list[BR.ActiveGroup]:
         """Get the active groups."""
 
         groups = await self._request("/grouping/activeGroups", "GET")
 
-        return [ActiveGroup(group) for group in groups.get("activeGroups", [])]
+        return [BR.ActiveGroup(group) for group in groups.get("activeGroups", [])]
 
     async def set_active_group(self, other_product_ids: list[str]) -> bool:
         """Set the active group."""
