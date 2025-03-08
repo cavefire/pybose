@@ -120,12 +120,13 @@ class BoseSpeaker:
         self._subprotocol = "eco2"
         self._req_id = 1
         self._url = f"wss://{self._host}:8082/?product=Madrid-iOS:31019F02-F01F-4E73-B495-B96D33AD3664"
-        self._responses = []
+        self._responses: list[BR.BoseMessage] = []
         self._stop_event = Event()
         self._receiver_task = None
         self._receivers = {}
         self._subscribed_resources = []
         self._message_queue = asyncio.Queue()
+        self._capabilities: BR.Capabilities = None
 
     async def connect(self):
         """Connect to the WebSocket and start the receiver task."""
@@ -139,6 +140,8 @@ class BoseSpeaker:
         if len(self._subscribed_resources) > 0:
             logging.debug("Subscribing to resources from previous session.")
             await self.subscribe(self._subscribed_resources)
+
+        await self.get_capabilities()
 
     async def disconnect(self):
         """Stop the receiver task and close the WebSocket."""
@@ -167,6 +170,7 @@ class BoseSpeaker:
         withHeaders=False,
         waitForResponse=True,
         version=None,
+        checkCapabilities=True,
     ) -> dict:
         """Send a request and wait for the matching response."""
         token = self._control_token
@@ -176,17 +180,25 @@ class BoseSpeaker:
         if version is None:
             version = self._version
 
-        message = {
+        if checkCapabilities and not self.has_capability(resource):
+            raise BoseFunctionNotSupportedException(
+                f"Resource {resource} is not supported by the device."
+            )
+
+        header: BR.BoseHeader = {
+            "device": self._device_id,
+            "method": method,
+            "msgtype": "REQUEST",
+            "reqID": req_id,
+            "resource": resource,
+            "status": 200,
+            "token": token,
+            "version": version,
+        }
+
+        message: BR.BoseMessage = {
             "body": body,
-            "header": {
-                "token": token,
-                "version": version,
-                "reqID": req_id,
-                "resource": resource,
-                "device": self._device_id,
-                "msgtype": "REQUEST",
-                "method": method,
-            },
+            "header": header,
         }
 
         if self._device_id is None:
@@ -210,20 +222,41 @@ class BoseSpeaker:
         # TODO: Refactor from polling to event-driven
         while True:
             for response in self._responses:
-                if response["header"]["reqID"] == req_id:
+                header = response.get("header", {})
+
+                if (
+                    header.get("msgtype", None) == BR.BoseHeaderMsgTypeEnum.RESPONSE
+                    and header.get("reqID", None) is req_id
+                ):
                     self._responses.remove(response)
-                    if (
-                        "status" in response["header"]
-                        and response["header"]["status"] != 200
-                    ):
-                        raise Exception(
-                            f"Request failed with status {response['header']['status']}",
-                            response["error"]["code"]
-                            if response["header"]["status"] == 500
-                            else response["header"]["status"],
-                            response["error"]["message"]
-                            if response["header"]["status"] == 500
-                            else None,
+
+                    status = header.get("status", None)
+                    if status is None:
+                        raise BoseRequestException(
+                            method,
+                            resource,
+                            body,
+                            999,
+                            999,
+                            f"pybose could not parse the message: {response}",
+                        )
+
+                    if status != 200 and header.get("reqID", None) == req_id:
+                        error = response.get(
+                            "error",
+                            {
+                                "status": 999,
+                                "message": f"pybose could not determine the error, but status code is {status}",
+                            },
+                        )
+
+                        raise BoseRequestException(
+                            method,
+                            resource,
+                            body,
+                            status,
+                            error["code"],
+                            error["message"],
                         )
                     if not withHeaders:
                         return response["body"]
@@ -236,24 +269,30 @@ class BoseSpeaker:
             while not self._stop_event.is_set():
                 message = await self._websocket.recv()
                 logging.debug(f"Received message: {message}")
-                parsed_message = json.loads(message)
+                parsed_message: BR.BoseMessage = json.loads(message)
 
-                if (
-                    "header" in parsed_message
-                    and "device" in parsed_message["header"]
-                    and self._device_id is None
-                ):
-                    self._device_id = parsed_message["header"]["device"]
+                header: BR.BoseHeader = parsed_message.get("header", {})
+                body: dict = parsed_message.get("body", {})
+
+                if header.get("device", None) is not None and self._device_id is None:
+                    self._device_id = header["device"]
+                    logging.debug(
+                        f"Received first message from device. Device ID: {self._device_id}"
+                    )
+                    logging.debug(
+                        f"Sending {self._message_queue.qsize()} queued messages."
+                    )
+
                     while not self._message_queue.empty():
                         message = await self._message_queue.get()
                         message["header"]["device"] = self._device_id
                         await self._websocket.send(json.dumps(message))
-                        logging.debug(
-                            f"Sent queued message: {json.dumps(message, indent=4)}"
-                        )
 
-                # Check if the message is a response to a request
-                if "header" in parsed_message and "reqID" in parsed_message["header"]:
+                if (
+                    header.get("msgtype", None) == BR.BoseHeaderMsgTypeEnum.RESPONSE
+                    and header.get("reqID", None) is not None
+                ):
+                    logging.debug(f"Response received for reqID: {header['reqID']}")
                     self._responses.append(parsed_message)
                 else:
                     # Notify all receivers about the unsolicited message
@@ -270,7 +309,23 @@ class BoseSpeaker:
 
     async def get_capabilities(self) -> BR.Capabilities:
         """Get the capabilities of the device."""
-        return BR.Capabilities(await self._request("/system/capabilities", "GET"))
+        self._capabilities = BR.Capabilities(
+            await self._request("/system/capabilities", "GET", checkCapabilities=False)
+        )
+        return self._capabilities
+
+    def has_capability(self, endpoint: str) -> bool:
+        """Check if the device has a certain capability."""
+        if self._capabilities is None:
+            raise BoseCapabilitiesNotLoadedException()
+
+        groups: list[BR.CapabilityGroup] = self._capabilities.get("group", {})
+        endpoints: list[str] = [
+            endpoint.get("endpoint", None)
+            for group in groups
+            for endpoint in group.get("endpoints", {})
+        ]
+        return endpoint in endpoints
 
     async def get_system_info(self) -> BR.SystemInfo:
         """Get system info."""
@@ -325,7 +380,7 @@ class BoseSpeaker:
         """Skip to the previous content."""
         return await self._control_transport("SKIPPREVIOUS")
 
-    async def seek(self, position):
+    async def seek(self, position: float | int) -> BR.ContentNowPlaying:
         """Seek to position (in seconds)."""
         body = {"position": position, "state": "SEEK"}
         return await self._request("/content/transportControl", "PUT", body)
@@ -392,7 +447,7 @@ class BoseSpeaker:
             "height",
             "avSync",
         ]:
-            raise Exception(f"Invalid audio setting: {option}")
+            raise BoseInvalidAudioSettingException(f"Invalid audio setting: {option}")
         return BR.Audio(await self._request("/audio/" + option, "GET"))
 
     async def set_audio_setting(self, option, value) -> BR.Audio:
@@ -406,7 +461,7 @@ class BoseSpeaker:
             "height",
             "avSync",
         ]:
-            raise Exception(f"Invalid audio setting: {option}")
+            raise BoseInvalidAudioSettingException(f"Invalid audio setting: {option}")
 
         return BR.Audio(
             await self._request("/audio/" + option, "POST", {"value": int(value)})
@@ -550,6 +605,33 @@ class BoseSpeaker:
     async def get_product_settings(self) -> BR.ProductSettings:
         """Get the product settings."""
         return BR.ProductSettings(await self._request("/system/productSettings", "GET"))
+
+
+class BoseFunctionNotSupportedException(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
+
+class BoseCapabilitiesNotLoadedException(Exception):
+    def __init__(self):
+        self.message = "Capabilities not loaded yet."
+        super().__init__(self.message)
+
+
+class BoseInvalidAudioSettingException(Exception):
+    def __init__(self, setting):
+        self.message = f"Invalid audio setting: {setting}"
+        super().__init__(self.message)
+
+
+class BoseRequestException(Exception):
+    def __init__(self, method, resource, body, http_status, error_status, message):
+        self.message = message
+        super().__init__(
+            f"'{method} {resource}' returned {http_status}: Bose Error #{error_status} - {self.message}"
+        )
+        logging.debug(f"Request body for previous error: {json.dumps(body, indent=4)}")
 
 
 # EXAMPLE USAGE

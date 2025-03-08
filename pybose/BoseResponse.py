@@ -1,6 +1,28 @@
 from typing import TypedDict, List, Optional, Dict
 
 
+class BoseHeaderMsgTypeEnum(enumerate):
+    RESPONSE = "RESPONSE"
+    NOTIFY = "NOTIFY"
+
+
+class BoseHeader(TypedDict):
+    device: str
+    resource: str
+    method: str
+    msgtype: BoseHeaderMsgTypeEnum
+    reqID: int
+    version: float
+    status: int
+    token: str
+    targetGuid: str
+
+
+class BoseMessage(TypedDict):
+    header: BoseHeader
+    body: dict
+
+
 # Capabilities
 class CapabilityEndpoint(TypedDict):
     endpoint: str
@@ -13,7 +35,7 @@ class CapabilityGroup(TypedDict):
 
 
 class Capabilities(TypedDict):
-    group: CapabilityGroup
+    group: list[CapabilityGroup]
 
 
 # SystemInfo
@@ -59,7 +81,7 @@ class ContentItem(TypedDict, total=False):
     containerArt: str
 
 
-class Capabilities(TypedDict, total=False):
+class ContainerCapabilities(TypedDict, total=False):
     favoriteSupported: bool
     ratingsSupported: bool
     repeatSupported: bool
@@ -73,7 +95,7 @@ class Capabilities(TypedDict, total=False):
 
 class Container(TypedDict, total=False):
     contentItem: Optional[ContentItem]
-    capabilities: Optional[Capabilities]
+    capabilities: Optional[ContainerCapabilities]
 
 
 class Source(TypedDict, total=False):
@@ -280,7 +302,7 @@ class CecSettingsProperties(TypedDict, total=False):
 class CecSettings(TypedDict):
     mode: CecSettingsSupportedValuesEnum
     properties: CecSettingsProperties
-    
+
 
 # Product Settings
 class PresetMetadata(TypedDict):
