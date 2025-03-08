@@ -5,7 +5,7 @@ import logging
 import sys
 import jwt
 from .GSSDK import GSRequest, SigUtils
-from .BoseResponse import BoseApiProduct
+from .BoseCloudResponse import BoseApiProduct
 
 """
 ALL API KEYS ARE PUBLICLY AVAILABLE ON THE BOSE WEBSITE
