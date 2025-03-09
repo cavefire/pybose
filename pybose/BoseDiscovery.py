@@ -1,5 +1,6 @@
 from zeroconf import Zeroconf, ServiceBrowser, ServiceStateChange
 from typing import List, Dict
+import time
 
 class BoseDiscovery:
   """ Discover Bose devices on the local network using Zeroconf. """
@@ -35,7 +36,6 @@ class BoseDiscovery:
     listener = ServiceBrowser(self.zeroconf, "_bose-passport._tcp.local.", handlers=[self._on_service_state_change])
 
     try:
-        import time
         time.sleep(timeout)
     finally:
         self.zeroconf.close()
