@@ -1,5 +1,7 @@
 # Unofficial Bose API for Soundbars and Speakers
 
+[![Python Tests](https://github.com/cavefire/pybose/actions/workflows/python-tests.yml/badge.svg)](https://github.com/cavefire/pybose/actions/workflows/python-tests.yml)
+
 This Python project provides an unofficial API to control Bose Soundbars and Speakers locally. The API was reverse-engineered by analyzing the Bose app's API calls and is **not officially supported by Bose**. It allows users to interact with their Bose devices through local network communication and provides a basic feature set for device control.
 
 Also check out my Homeassistant integration (WIP): [Bose-Homeassistant](https://github.com/cavefire/Bose-Homeassistant)
