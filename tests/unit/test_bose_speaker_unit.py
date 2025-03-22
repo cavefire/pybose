@@ -68,7 +68,7 @@ async def test_request_success():
     # Use the FakeWebsocket class (which defines a send method) for fake_connect.
     async def fake_connect():
         bose._websocket = FakeWebsocket()
-    bose.connect = fake_connect
+    await fake_connect()
 
     dummy_response = {
         "header": {
@@ -92,6 +92,8 @@ async def test_request_error():
     async def fake_connect():
         bose._websocket = FakeWebsocket()
     bose.connect = fake_connect
+    await bose.connect()
+    await bose.connect()
 
     dummy_response = {
         "header": {

@@ -138,7 +138,7 @@ class BoseSpeaker:
         self._subscribed_resources: List[str] = []
         self._message_queue: asyncio.Queue = asyncio.Queue()
         self._capabilities: Optional[BR.Capabilities] = None
-        self._auto_reconnect = self._auto_reconnect
+        self._auto_reconnect = auto_reconnect
 
     async def connect(self) -> None:
         """Connect to the WebSocket and start the receiver loop."""
