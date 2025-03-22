@@ -112,12 +112,19 @@ DEFAULT_SUBSCRIBE_RESOURCES: List[str] = [
 
 
 class BoseSpeaker:
-    def __init__(self, control_token: str, host: str, device_id: Optional[str] = None, version: int = 1) -> None:
+    def __init__(
+        self,
+        control_token: str,
+        host: str,
+        device_id: Optional[str] = None,
+        version: int = 1,
+        auto_reconnect: bool = True,
+    ) -> None:
         self._control_token: str = control_token
         self._device_id: Optional[str] = device_id
         self._host: str = host
         self._version: int = version
-        self._websocket: Optional[websockets.WebSocketClientProtocol] = None
+        self._websocket: Optional[websockets.connect] = None
         self._ssl_context: SSLContext = SSLContext(PROTOCOL_TLS_CLIENT)
         self._ssl_context.check_hostname = False
         self._ssl_context.verify_mode = CERT_NONE
@@ -131,9 +138,11 @@ class BoseSpeaker:
         self._subscribed_resources: List[str] = []
         self._message_queue: asyncio.Queue = asyncio.Queue()
         self._capabilities: Optional[BR.Capabilities] = None
+        self._auto_reconnect = self._auto_reconnect
 
     async def connect(self) -> None:
         """Connect to the WebSocket and start the receiver loop."""
+        self.disconnect()
         self._websocket = await websockets.connect(
             self._url, subprotocols=[self._subprotocol], ssl=self._ssl_context
         )
@@ -207,10 +216,21 @@ class BoseSpeaker:
                 f"Waiting for deviceID. Queued message: {json.dumps(message, indent=4)}"
             )
         else:
-            if self._websocket is None or (hasattr(self._websocket, "close_code") and self._websocket.close_code is not None):
-                logging.warning("WebSocket connection is closed. Reconnecting before sending message.")
-                await self.connect()
-            await self._websocket.send(json.dumps(message))
+            try:
+                await self._websocket.send(json.dumps(message))
+            except websockets.ConnectionClosed:
+                if self._auto_reconnect:
+                    logging.warning(
+                        "WebSocket connection is closed. Reconnecting before sending message."
+                    )
+                    await self.connect()
+                    await self._websocket.send(json.dumps(message))
+                else:
+                    logging.error(
+                        "WebSocket connection is closed. Cannot send message."
+                    )
+                    raise Exception("WebSocket connection is closed.")
+
             logging.debug(f"Sent message: {json.dumps(message, indent=4)}")
 
         if not waitForResponse:
@@ -219,20 +239,37 @@ class BoseSpeaker:
         while True:
             for response in self._responses:
                 resp_header = response.get("header", {})
-                if (resp_header.get("msgtype") == BR.BoseHeaderMsgTypeEnum.RESPONSE and 
-                    resp_header.get("reqID") == req_id):
+                if (
+                    resp_header.get("msgtype") == BR.BoseHeaderMsgTypeEnum.RESPONSE
+                    and resp_header.get("reqID") == req_id
+                ):
                     self._responses.remove(response)
                     status = resp_header.get("status")
                     if status is None:
                         raise BoseRequestException(
-                            method, resource, body, 999, 999, f"pybose could not parse the message: {response}"
+                            method,
+                            resource,
+                            body,
+                            999,
+                            999,
+                            f"pybose could not parse the message: {response}",
                         )
                     if status != 200:
-                        error = response.get("error", {
-                            "status": 999,
-                            "message": f"pybose could not determine the error, but status code is {status}",
-                        })
-                        raise BoseRequestException(method, resource, body, status, error["code"], error["message"])
+                        error = response.get(
+                            "error",
+                            {
+                                "status": 999,
+                                "message": f"pybose could not determine the error, but status code is {status}",
+                            },
+                        )
+                        raise BoseRequestException(
+                            method,
+                            resource,
+                            body,
+                            status,
+                            error["code"],
+                            error["message"],
+                        )
                     return response["body"] if not withHeaders else response
             await asyncio.sleep(0.1)
 
@@ -246,21 +283,32 @@ class BoseSpeaker:
                 header: BR.BoseHeader = parsed_message.get("header", {})
                 if header.get("device") is not None and self._device_id is None:
                     self._device_id = header["device"]
-                    logging.debug(f"Received first message from device. Device ID: {self._device_id}")
-                    logging.debug(f"Sending {self._message_queue.qsize()} queued messages.")
+                    logging.debug(
+                        f"Received first message from device. Device ID: {self._device_id}"
+                    )
+                    logging.debug(
+                        f"Sending {self._message_queue.qsize()} queued messages."
+                    )
                     while not self._message_queue.empty():
                         queued_msg = await self._message_queue.get()
                         queued_msg["header"]["device"] = self._device_id
                         await self._websocket.send(json.dumps(queued_msg))
-                if (header.get("msgtype") == BR.BoseHeaderMsgTypeEnum.RESPONSE and header.get("reqID") is not None):
+                if (
+                    header.get("msgtype") == BR.BoseHeaderMsgTypeEnum.RESPONSE
+                    and header.get("reqID") is not None
+                ):
                     logging.debug(f"Response received for reqID: {header['reqID']}")
                     self._responses.append(parsed_message)
                 else:
                     for receiver in self._receivers.values():
                         receiver(parsed_message)
         except websockets.ConnectionClosed:
-            logging.warning("WebSocket connection lost. Attempting to reconnect...")
-            await self.connect()
+            logging.warning("WebSocket connection lost.")
+            if self._auto_reconnect:
+                logging.info("Reconnecting...")
+                await self.connect()
+            else:
+                logging.error("WebSocket connection closed.")
         except Exception as e:
             if not self._stop_event.is_set():
                 logging.error(f"Error in receiver loop: {e}")
@@ -315,7 +363,9 @@ class BoseSpeaker:
     async def _control_transport(self, control: str) -> BR.ContentNowPlaying:
         """Send a transport control command."""
         body = {"state": control}
-        return BR.ContentNowPlaying(await self._request("/content/transportControl", "PUT", body))
+        return BR.ContentNowPlaying(
+            await self._request("/content/transportControl", "PUT", body)
+        )
 
     async def pause(self) -> BR.ContentNowPlaying:
         """Pause playback."""
@@ -338,7 +388,9 @@ class BoseSpeaker:
         body = {"position": position, "state": "SEEK"}
         return await self._request("/content/transportControl", "PUT", body)
 
-    async def request_playback_preset(self, preset: BR.Preset, initiator_id: str) -> bool:
+    async def request_playback_preset(
+        self, preset: BR.Preset, initiator_id: str
+    ) -> bool:
         """Request a playback preset."""
         content_item = preset["actions"][0]["payload"]["contentItem"]
         body = {
@@ -359,10 +411,14 @@ class BoseSpeaker:
         """Return the device ID (if available)."""
         return self._device_id
 
-    async def subscribe(self, resources: List[str] = DEFAULT_SUBSCRIBE_RESOURCES) -> dict:
+    async def subscribe(
+        self, resources: List[str] = DEFAULT_SUBSCRIBE_RESOURCES
+    ) -> dict:
         """Subscribe to a list of resources."""
         body = {
-            "notifications": [{"resource": resource, "version": 1} for resource in resources]
+            "notifications": [
+                {"resource": resource, "version": 1} for resource in resources
+            ]
         }
         self._subscribed_resources = resources
         return await self._request("/subscription", "PUT", body, version=2)
@@ -374,7 +430,9 @@ class BoseSpeaker:
     async def set_source(self, source: str, sourceAccount: str) -> BR.ContentNowPlaying:
         """Set the playback source."""
         body = {"source": source, "sourceAccount": sourceAccount}
-        return BR.ContentNowPlaying(await self._request("/content/playbackRequest", "POST", body))
+        return BR.ContentNowPlaying(
+            await self._request("/content/playbackRequest", "POST", body)
+        )
 
     async def get_sources(self) -> BR.Sources:
         """Retrieve available sources."""
@@ -382,21 +440,39 @@ class BoseSpeaker:
 
     async def get_audio_setting(self, option: str) -> BR.Audio:
         """Retrieve an audio setting value."""
-        if option not in ["bass", "treble", "center", "subwooferGain", "height", "avSync"]:
+        if option not in [
+            "bass",
+            "treble",
+            "center",
+            "subwooferGain",
+            "height",
+            "avSync",
+        ]:
             raise BoseInvalidAudioSettingException(option)
         return BR.Audio(await self._request("/audio/" + option, "GET"))
 
     async def set_audio_setting(self, option: str, value: int) -> BR.Audio:
         """Set an audio setting value."""
-        if option not in ["bass", "treble", "center", "subwooferGain", "height", "avSync"]:
+        if option not in [
+            "bass",
+            "treble",
+            "center",
+            "subwooferGain",
+            "height",
+            "avSync",
+        ]:
             raise BoseInvalidAudioSettingException(option)
-        return BR.Audio(await self._request("/audio/" + option, "POST", {"value": value}))
+        return BR.Audio(
+            await self._request("/audio/" + option, "POST", {"value": value})
+        )
 
     async def get_accessories(self) -> BR.Accessories:
         """Retrieve accessories information."""
         return BR.Accessories(await self._request("/accessories", "GET"))
 
-    async def put_accessories(self, subs_enabled: Optional[bool] = None, rears_enabled: Optional[bool] = None) -> bool:
+    async def put_accessories(
+        self, subs_enabled: Optional[bool] = None, rears_enabled: Optional[bool] = None
+    ) -> bool:
         """Update accessories settings."""
         if subs_enabled is None and rears_enabled is None:
             accessories = await self.get_accessories()
@@ -433,7 +509,9 @@ class BoseSpeaker:
 
     async def set_rebroadcast_latency_mode(self, mode: str) -> bool:
         """Set the rebroadcast latency mode."""
-        result = await self._request("/audio/rebroadcastLatency/mode", "PUT", {"mode": mode})
+        result = await self._request(
+            "/audio/rebroadcastLatency/mode", "PUT", {"mode": mode}
+        )
         return result.get("value") == mode
 
     async def get_active_groups(self) -> List[BR.ActiveGroup]:
@@ -448,18 +526,24 @@ class BoseSpeaker:
             body["products"].append({"productId": product_id, "role": "NORMAL"})
         return await self._request("/grouping/activeGroups", "POST", body)
 
-    async def add_to_active_group(self, active_group_id: str, other_product_ids: List[str]) -> bool:
+    async def add_to_active_group(
+        self, active_group_id: str, other_product_ids: List[str]
+    ) -> bool:
         """Add products to the active group."""
         body = {
             "activeGroupId": active_group_id,
-            "addProducts": [{"productId": pid, "role": "NORMAL"} for pid in other_product_ids],
+            "addProducts": [
+                {"productId": pid, "role": "NORMAL"} for pid in other_product_ids
+            ],
             "addGroups": [],
             "removeGroups": [],
             "removeProducts": [],
         }
         return await self._request("/grouping/activeGroups", "PUT", body)
 
-    async def remove_from_active_group(self, active_group_id: str, other_product_ids: List[str]) -> bool:
+    async def remove_from_active_group(
+        self, active_group_id: str, other_product_ids: List[str]
+    ) -> bool:
         """Remove products from the active group."""
         body = {
             "name": "",
@@ -467,7 +551,9 @@ class BoseSpeaker:
             "addProducts": [],
             "addGroups": [],
             "removeGroups": [],
-            "removeProducts": [{"productId": pid, "role": "NORMAL"} for pid in other_product_ids],
+            "removeProducts": [
+                {"productId": pid, "role": "NORMAL"} for pid in other_product_ids
+            ],
         }
         return await self._request("/grouping/activeGroups", "PUT", body)
 
@@ -479,16 +565,22 @@ class BoseSpeaker:
         """Retrieve the system timeout settings."""
         return BR.SystemTimeout(await self._request("/system/power/timeouts", "GET"))
 
-    async def set_system_timeout(self, no_audio: bool, no_video: bool) -> BR.SystemTimeout:
+    async def set_system_timeout(
+        self, no_audio: bool, no_video: bool
+    ) -> BR.SystemTimeout:
         """Set system timeout settings."""
         body = {"noAudio": no_audio, "noVideo": no_video}
-        return BR.SystemTimeout(await self._request("/system/power/timeouts", "PUT", body))
+        return BR.SystemTimeout(
+            await self._request("/system/power/timeouts", "PUT", body)
+        )
 
     async def get_cec_settings(self) -> BR.CecSettings:
         """Retrieve the CEC settings."""
         return BR.CecSettings(await self._request("/cec", "GET"))
 
-    async def set_cec_settings(self, mode: BR.CecSettingsSupportedValuesEnum) -> BR.CecSettings:
+    async def set_cec_settings(
+        self, mode: BR.CecSettingsSupportedValuesEnum
+    ) -> BR.CecSettings:
         """Set the CEC settings."""
         return BR.CecSettings(await self._request("/cec", "PUT", {"mode": mode}))
 

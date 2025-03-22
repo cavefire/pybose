@@ -1,3 +1,17 @@
+"""
+BoseAuth Module
+
+This module provides functionality to obtain a control token from the BOSE online API,
+which is used for local control of a Bose speaker. The control token is a JWT with a limited
+lifetime and must be refreshed periodically. The API keys used are publicly available on the
+BOSE website, so they are not considered sensitive.
+
+Note:
+    This API is not officially supported by Bose and was reverse engineered by analyzing
+    the Bose app's API calls. Therefore, the API may change or stop working at any time.
+    Please be respectful with the requests to avoid being blocked.
+"""
+
 import requests
 import time
 import json
@@ -9,30 +23,34 @@ from typing import TypedDict, Optional, Dict, Any, cast
 from .GSSDK import GSRequest, SigUtils
 from .BoseCloudResponse import BoseApiProduct
 
-"""
-ALL API KEYS ARE PUBLICLY AVAILABLE ON THE BOSE WEBSITE
-THESE ARE NOT SENSITIVE INFORMATION AND THEREFORE CAN BE SHARED IN THIS SCRIPT
-
-This script allows you to obtain a control token from the BOSE online api in order to control your BOSE speaker locally.
-The obtained token is a JWT with a limited lifetime and needs to be refreshed from time to time. This script currently does not support refreshing the token. (Feel free to add it!)
-So you need to refetch the token from time to time. Please cache the token, to avoid many api calls. I dont know if there is a rate limit or something like that.
-
-This api was not documented by BOSE and is not officially supported, but was revered engineered by analyzing the BOSE app's api calls.
-So it may stop working at any time.
-
-IMPORTANT:
-Just be respectful and dont spam the api with requests.
-Otherwise BOSE may block this project all together.
-"""
-
 # --- API Types ---
 
-# For socialize.us1.gigya.com /socialize.getSDKConfig
 class SocializeSDKConfigResponseIds(TypedDict):
+    """
+    Represents the 'ids' portion of the response from the Socialize SDK Config endpoint.
+    
+    Attributes:
+        gmid (str): The GMID value.
+        ucid (str): The UCID value.
+    """
     gmid: str
     ucid: str
 
 class SocializeSDKConfigResponse(TypedDict, total=False):
+    """
+    Represents the full response from the Socialize SDK Config endpoint.
+    
+    Attributes:
+        appIds (Dict[str, Any]): Application IDs (optional).
+        callId (str): The call identifier.
+        errorCode (int): The error code, if any.
+        errorReportRules (list[Any]): Any error report rules.
+        ids (SocializeSDKConfigResponseIds): The GMID and UCID values.
+        permissions (Dict[str, list[str]]): Permissions by service.
+        statusCode (int): HTTP status code.
+        statusReason (str): HTTP status reason.
+        time (str): Timestamp of the response.
+    """
     appIds: Dict[str, Any]
     callId: str
     errorCode: int
@@ -43,22 +61,54 @@ class SocializeSDKConfigResponse(TypedDict, total=False):
     statusReason: str
     time: str
 
-# For accounts.us1.gigya.com /accounts.login
 class AccountsLoginResponseSessionInfo(TypedDict):
+    """
+    Represents session information from the accounts.login endpoint.
+    
+    Attributes:
+        sessionToken (str): The session token.
+        sessionSecret (str): The secret used for signing requests.
+    """
     sessionToken: str
     sessionSecret: str
 
 class AccountsLoginResponseUserInfo(TypedDict):
+    """
+    Represents user information from the accounts.login endpoint.
+    
+    Attributes:
+        UID (str): The unique user ID.
+        signatureTimestamp (str): Timestamp of the signature.
+        UIDSignature (str): The UID signature.
+    """
     UID: str
     signatureTimestamp: str
     UIDSignature: str
 
 class AccountsLoginResponse(TypedDict):
+    """
+    Represents the complete response from the accounts.login endpoint.
+    
+    Attributes:
+        sessionInfo (AccountsLoginResponseSessionInfo): Session info.
+        userInfo (AccountsLoginResponseUserInfo): User info.
+    """
     sessionInfo: AccountsLoginResponseSessionInfo
     userInfo: AccountsLoginResponseUserInfo
 
-# For accounts.us1.gigya.com /accounts.getJWT
 class AccountsGetJWTResponse(TypedDict):
+    """
+    Represents the response from the accounts.getJWT endpoint.
+    
+    Attributes:
+        apiVersion (int): The API version.
+        callId (str): The call identifier.
+        errorCode (int): The error code.
+        id_token (str): The JWT token.
+        statusCode (int): The HTTP status code.
+        statusReason (str): The HTTP status reason.
+        time (str): The time of the response.
+    """
     apiVersion: int
     callId: str
     errorCode: int
@@ -67,8 +117,18 @@ class AccountsGetJWTResponse(TypedDict):
     statusReason: str
     time: str
 
-# For id.api.bose.io /id-jwt-core/token
 class IDJwtCoreTokenResponse(TypedDict):
+    """
+    Represents the response from the id.api.bose.io /id-jwt-core/token endpoint.
+    
+    Attributes:
+        access_token (str): The access token.
+        bosePersonID (str): The Bose person ID.
+        expires_in (int): Token expiry time in seconds.
+        refresh_token (str): The refresh token.
+        scope (str): The token scope.
+        token_type (str): The token type.
+    """
     access_token: str
     bosePersonID: str
     expires_in: int
@@ -76,8 +136,24 @@ class IDJwtCoreTokenResponse(TypedDict):
     scope: str
     token_type: str
 
-# For users.api.bose.io /passport-core/products/...
 class UsersApiBoseProductResponse(TypedDict, total=False):
+    """
+    Represents the response from the users.api.bose.io /passport-core/products/ endpoint.
+    
+    Attributes:
+        attributes (Dict[str, Any]): Product attributes.
+        createdOn (str): Creation timestamp.
+        groups (list[Any]): Groups information.
+        persons (Dict[str, str]): Mapping of person IDs to roles.
+        presets (Dict[str, Any]): Presets information.
+        productColor (int): The color code of the product.
+        productID (str): The product identifier.
+        productType (str): The product type.
+        serviceAccounts (list[Dict[str, Any]]): Service account details.
+        settings (Dict[str, Any]): Additional settings.
+        updatedOn (str): Last updated timestamp.
+        users (Dict[str, Any]): Users associated with the product.
+    """
     attributes: Dict[str, Any]
     createdOn: str
     groups: list[Any]
@@ -93,17 +169,33 @@ class UsersApiBoseProductResponse(TypedDict, total=False):
 
 # --- Internal Types ---
 
-# Existing control token type expected by users of getControlToken
 class ControlToken(TypedDict):
+    """
+    Represents a control token with associated information.
+    
+    Attributes:
+        access_token (str): The access token.
+        refresh_token (str): The refresh token.
+        bose_person_id (str): The Bose person identifier.
+    """
     access_token: str
     refresh_token: str
     bose_person_id: str
 
-# Internal raw token type is now based on the IDJwtCoreTokenResponse
+# Internal raw token type, based on IDJwtCoreTokenResponse.
 RawControlToken = IDJwtCoreTokenResponse
 
-# For internal login response conversion
 class LoginResponse(TypedDict):
+    """
+    Represents an internal structure for login responses.
+    
+    Attributes:
+        session_token (str): The session token.
+        session_secret (str): The session secret.
+        uid (str): The user ID.
+        signatureTimestamp (str): Timestamp for the signature.
+        UIDSignature (str): The UID signature.
+    """
     session_token: str
     session_secret: str
     uid: str
@@ -113,18 +205,38 @@ class LoginResponse(TypedDict):
 # --- BoseAuth Class ---
 
 class BoseAuth:
+    """
+    A class to interact with the BOSE online API for obtaining control tokens.
+
+    This class uses publicly available API keys to obtain a JWT control token, which is used
+    to control a local Bose speaker. It also provides methods to refresh tokens and to fetch
+    product information from the BOSE API.
+    
+    Attributes:
+        GIGYA_API_KEY (str): Public API key for Gigya.
+        GIGYA_UA (str): User-Agent string used for Gigya requests.
+        BOSE_API_KEY (str): Public API key for the BOSE API.
+    """
     GIGYA_API_KEY: str = "3_7PoVX7ELjlWyppFZFGia1Wf1rNGZv_mqVgtqVmYl3Js-hQxZiFIU8uHxd8G6PyNz"
     GIGYA_UA: str = "Bose/32768 MySSID/1568.300.101 Darwin/24.2.0"
     BOSE_API_KEY: str = "67616C617061676F732D70726F642D6D61647269642D696F73"
 
     def __init__(self) -> None:
+        """
+        Initialize a new BoseAuth instance.
+        
+        The control token, email, and password are initially unset.
+        """
         self._control_token: Optional[RawControlToken] = None
         self._email: Optional[str] = None
         self._password: Optional[str] = None
 
     def _get_ids(self) -> Optional[Dict[str, str]]:
         """
-        Start a session and get the GMID and UCID using the Socialize SDK Config endpoint.
+        Start a session and retrieve the GMID and UCID via the Socialize SDK Config endpoint.
+        
+        Returns:
+            Optional[Dict[str, str]]: A dictionary with 'gmid' and 'ucid' keys if successful; otherwise, None.
         """
         logging.debug("Getting GMID and UCID")
         url: str = "https://socialize.us1.gigya.com/socialize.getSDKConfig"
@@ -151,7 +263,19 @@ class BoseAuth:
 
     def _login(self, email: str, password: str, gmid: str, ucid: str) -> LoginResponse:
         """
-        Login to Gigya using the accounts.login endpoint.
+        Perform login to Gigya using the provided email and password.
+        
+        Args:
+            email (str): The user's email address.
+            password (str): The user's password.
+            gmid (str): The GMID retrieved from _get_ids.
+            ucid (str): The UCID retrieved from _get_ids.
+        
+        Returns:
+            LoginResponse: A dictionary containing session token, session secret, UID, signature timestamp, and UID signature.
+        
+        Raises:
+            ValueError: If the login fails.
         """
         logging.debug(f"Logging in with {email}, gmid {gmid}, ucid {ucid}")
         url: str = "https://accounts.us1.gigya.com/accounts.login"
@@ -199,7 +323,15 @@ class BoseAuth:
 
     def _get_jwt(self, user: LoginResponse, gmid: str, ucid: str) -> Optional[str]:
         """
-        Get the authentication token from Gigya using the accounts.getJWT endpoint.
+        Retrieve a JWT token from Gigya using the accounts.getJWT endpoint.
+        
+        Args:
+            user (LoginResponse): The login response obtained from _login.
+            gmid (str): The GMID value.
+            ucid (str): The UCID value.
+        
+        Returns:
+            Optional[str]: The JWT token if successful; otherwise, None.
         """
         url: str = "https://accounts.us1.gigya.com/accounts.getJWT"
         headers: Dict[str, str] = {
@@ -242,8 +374,19 @@ class BoseAuth:
 
     def do_token_refresh(self, access_token: Optional[str] = None, refresh_token: Optional[str] = None) -> ControlToken:
         """
-        Refresh the control token using the /id-jwt-core/token endpoint.
-        If access_token and refresh_token are not provided, the previously fetched tokens will be used.
+        Refresh the control token using the id.api.bose.io endpoint.
+
+        If access_token and refresh_token are not provided, the previously stored tokens are used.
+
+        Args:
+            access_token (Optional[str]): Existing access token.
+            refresh_token (Optional[str]): Existing refresh token.
+
+        Returns:
+            ControlToken: A dictionary containing the new access token, refresh token, and Bose person ID.
+
+        Raises:
+            ValueError: If no control token is stored or required tokens are missing.
         """
         if self._control_token is None:
             raise ValueError("No control token stored to refresh.")
@@ -276,7 +419,21 @@ class BoseAuth:
     ) -> Optional[RawControlToken]:
         """
         Fetch the local control token from the id.api.bose.io endpoint.
-        Either provide the gigya_jwt, signature_timestamp, uid and uid_signature or the access_token and refresh_token.
+
+        Either provide:
+            - gigya_jwt, signature_timestamp, uid, and uid_signature, or
+            - access_token and refresh_token.
+
+        Args:
+            gigya_jwt (Optional[str]): JWT token from Gigya.
+            signature_timestamp (Optional[str]): Signature timestamp.
+            uid (Optional[str]): User ID.
+            uid_signature (Optional[str]): UID signature.
+            access_token (Optional[str]): Existing access token.
+            refresh_token (Optional[str]): Existing refresh token.
+
+        Returns:
+            Optional[RawControlToken]: The fetched token if successful, otherwise None.
         """
         if (gigya_jwt is None or signature_timestamp is None or uid is None or uid_signature is None) and (access_token is None or refresh_token is None):
             raise ValueError("Provide either the gigya_jwt, signature_timestamp, uid and uid_signature or the access_token and refresh_token")
@@ -322,13 +479,18 @@ class BoseAuth:
 
     def is_token_valid(self, token: str) -> bool:
         """
-        Check if the token is still valid by decoding it without verifying signature.
+        Check if the given token is still valid by decoding it without verifying the signature.
+
+        Args:
+            token (str): The JWT token to validate.
+
+        Returns:
+            bool: True if the token has not expired, False otherwise.
         """
         try:
             decoded: Dict[str, Any] = jwt.decode(token, options={"verify_signature": False})
             exp: int = decoded.get("exp", 0)
             valid: bool = exp > int(time.time())
-            # Update control token if valid (only setting access_token)
             if self._control_token is None:
                 self._control_token = {"access_token": token}
             else:
@@ -339,7 +501,21 @@ class BoseAuth:
 
     def getControlToken(self, email: Optional[str] = None, password: Optional[str] = None, forceNew: bool = False) -> ControlToken:
         """
-        Get the control token to access the local speaker API.
+        Obtain the control token for accessing the local speaker API.
+
+        If a token is already stored and valid, it is returned (unless forceNew is True). Otherwise, the
+        token is retrieved by logging in and fetching keys from the Bose API.
+
+        Args:
+            email (Optional[str]): User's email address.
+            password (Optional[str]): User's password.
+            forceNew (bool): If True, force retrieval of a new token even if one is stored.
+
+        Returns:
+            ControlToken: A dictionary containing the access token, refresh token, and Bose person ID.
+
+        Raises:
+            ValueError: If email and password are not provided for the initial call or if token retrieval fails.
         """
         if not forceNew and self._control_token is not None:
             access_token: Optional[str] = self._control_token.get("access_token")
@@ -385,6 +561,13 @@ class BoseAuth:
     def fetchProductInformation(self, gwid: str) -> Optional[BoseApiProduct]:
         """
         Fetch product information from the users.api.bose.io endpoint.
+
+        Args:
+            gwid (str): The product (or device) identifier.
+
+        Returns:
+            Optional[BoseApiProduct]: An instance of BoseApiProduct populated with the response data,
+            or None if the fetch fails.
         """
         url: str = f"https://users.api.bose.io/passport-core/products/{gwid}"
         headers: Dict[str, str] = {
