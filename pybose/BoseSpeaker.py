@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import asyncio
 import logging
-import sys
 from ssl import SSLContext, CERT_NONE, PROTOCOL_TLS_CLIENT
 import websockets
 from threading import Event
@@ -587,6 +586,10 @@ class BoseSpeaker:
     async def get_product_settings(self) -> BR.ProductSettings:
         """Retrieve the product settings."""
         return BR.ProductSettings(await self._request("/system/productSettings", "GET"))
+
+    async def get_network_status(self) -> BR.NetworkStatus:
+        """Retrieve the network status."""
+        return BR.NetworkStatus(await self._request("/network/status", "GET"))
 
 
 class BoseFunctionNotSupportedException(Exception):

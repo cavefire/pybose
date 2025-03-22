@@ -352,3 +352,34 @@ class ProductSettings(TypedDict):
     properties: ProductProperties
     timeformat: str
     timezone: str
+
+
+class NetworkStateEnum(enumerate):
+    DOWN = "DOWN"
+    UP = "UP"
+
+
+class NetworkTypeEnum(enumerate):
+    WIRED_USB = "WIRED_USB"
+    WIRED_ETH = "WIRED_ETH"
+    WIRELESS = "WIRELESS"
+
+
+class IpInfo(TypedDict):
+    ipAddress: str
+    subnetMask: str
+
+
+class NetworkInterface(TypedDict):
+    ipInfo: Optional[IpInfo]
+    macAddress: str
+    name: str
+    state: NetworkStateEnum
+    type: NetworkTypeEnum
+
+
+class NetworkStatus(TypedDict):
+    interfaces: List[NetworkInterface]
+    isPrimaryUp: bool
+    primary: str
+    primaryIpAddress: str
