@@ -17,6 +17,7 @@ from ssl import SSLContext, CERT_NONE, PROTOCOL_TLS_CLIENT
 import websockets
 from threading import Event
 from typing import Any, Callable, Dict, List, Optional, Union
+from pybose.BoseAuth import BoseAuth
 
 from . import BoseResponse as BR
 
@@ -118,6 +119,7 @@ class BoseSpeaker:
         device_id: Optional[str] = None,
         version: int = 1,
         auto_reconnect: bool = True,
+        bose_auth: BoseAuth = None
     ) -> None:
         self._control_token: str = control_token
         self._device_id: Optional[str] = device_id
@@ -138,6 +140,7 @@ class BoseSpeaker:
         self._message_queue: asyncio.Queue = asyncio.Queue()
         self._capabilities: Optional[BR.Capabilities] = None
         self._auto_reconnect = auto_reconnect
+        self._bose_auth: BoseAuth = bose_auth
 
     async def connect(self) -> None:
         """Connect to the WebSocket and start the receiver loop."""
@@ -185,12 +188,18 @@ class BoseSpeaker:
         """Send a request over the WebSocket and wait for the matching response."""
         if body is None:
             body = {}
+            
+        if self._bose_auth:
+            if not self._bose_auth.is_token_valid():
+                logging.warning("Token is not valid. Refreshing token.")
+                control_token = await self._bose_auth.do_token_refresh()
+                self._control_token = control_token.get("access_token")
 
         token: str = self._control_token
         req_id: int = self._req_id
         self._req_id += 1
-
-        version = version if version is not None else self._version
+        
+        version = version if version is not None else self._version        
 
         if checkCapabilities and not self.has_capability(resource):
             raise BoseFunctionNotSupportedException(
