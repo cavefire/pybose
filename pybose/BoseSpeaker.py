@@ -119,7 +119,7 @@ class BoseSpeaker:
         device_id: Optional[str] = None,
         version: int = 1,
         auto_reconnect: bool = True,
-        bose_auth: BoseAuth = None
+        bose_auth: BoseAuth = None,
     ) -> None:
         self._control_token: str = control_token
         self._device_id: Optional[str] = device_id
@@ -144,7 +144,7 @@ class BoseSpeaker:
 
     async def connect(self) -> None:
         """Connect to the WebSocket and start the receiver loop."""
-        self.disconnect()
+        await self.disconnect()
         self._websocket = await websockets.connect(
             self._url, subprotocols=[self._subprotocol], ssl=self._ssl_context
         )
@@ -188,7 +188,7 @@ class BoseSpeaker:
         """Send a request over the WebSocket and wait for the matching response."""
         if body is None:
             body = {}
-            
+
         if self._bose_auth:
             if not self._bose_auth.is_token_valid():
                 logging.warning("Token is not valid. Refreshing token.")
@@ -198,8 +198,8 @@ class BoseSpeaker:
         token: str = self._control_token
         req_id: int = self._req_id
         self._req_id += 1
-        
-        version = version if version is not None else self._version        
+
+        version = version if version is not None else self._version
 
         if checkCapabilities and not self.has_capability(resource):
             raise BoseFunctionNotSupportedException(

@@ -258,6 +258,22 @@ class BoseAuth:
         self._email: Optional[str] = None
         self._password: Optional[str] = None
 
+    def set_access_token(
+        self, access_token: str, refresh_token: str, bose_person_id
+    ) -> None:
+        """
+        Set the access token and refresh token.
+
+        Args:
+            access_token (str): The access token.
+            refresh_token (str): The refresh token.
+        """
+        self._control_token = {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "bosePersonID": bose_person_id,
+        }
+
     def _get_ids(self) -> Optional[Dict[str, str]]:
         """
         Start a session and retrieve the GMID and UCID via the Socialize SDK Config endpoint.
@@ -528,6 +544,32 @@ class BoseAuth:
             return None
         token_resp: IDJwtCoreTokenResponse = cast(IDJwtCoreTokenResponse, response_json)
         return token_resp
+
+    def get_token_validity_time(self, token: str = None) -> int:
+        """
+        Get the validity time of the given token.
+
+        Args:
+            token (str): The JWT token to check.
+
+        Returns:
+            int: The time until the token expires in seconds.
+        """
+
+        if token is None:
+            token = self._control_token.get("access_token")
+        if token is None:
+            return 0
+
+        try:
+            decoded: Dict[str, Any] = jwt.decode(
+                token, options={"verify_signature": False}
+            )
+            exp: int = decoded.get("exp", 0)
+            return exp - int(time.time())
+        except Exception as e:
+            logging.error(f"Error decoding token: {e}")
+            return 0
 
     def is_token_valid(self, token: str = None) -> bool:
         """
