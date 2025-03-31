@@ -114,14 +114,12 @@ DEFAULT_SUBSCRIBE_RESOURCES: List[str] = [
 class BoseSpeaker:
     def __init__(
         self,
-        control_token: str,
         host: str,
         device_id: Optional[str] = None,
         version: int = 1,
         auto_reconnect: bool = True,
         bose_auth: BoseAuth = None,
     ) -> None:
-        self._control_token: str = control_token
         self._device_id: Optional[str] = device_id
         self._host: str = host
         self._version: int = version
@@ -141,6 +139,7 @@ class BoseSpeaker:
         self._capabilities: Optional[BR.Capabilities] = None
         self._auto_reconnect = auto_reconnect
         self._bose_auth: BoseAuth = bose_auth
+        self._access_token = bose_auth._control_token.get("access_token")
 
     async def connect(self) -> None:
         """Connect to the WebSocket and start the receiver loop."""
@@ -192,10 +191,10 @@ class BoseSpeaker:
         if self._bose_auth:
             if not self._bose_auth.is_token_valid():
                 logging.warning("Token is not valid. Refreshing token.")
-                control_token = await self._bose_auth.do_token_refresh()
-                self._control_token = control_token.get("access_token")
+                control_token = self._bose_auth.do_token_refresh()
+                self._access_token = control_token.get("access_token")
 
-        token: str = self._control_token
+        token: str = self._access_token
         req_id: int = self._req_id
         self._req_id += 1
 
