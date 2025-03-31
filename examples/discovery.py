@@ -1,6 +1,7 @@
-from pybose import BoseDiscovery
+import sys
+sys.path.append("../")
 
-# EXAMPLE USAGE
+from pybose import BoseDiscovery
 
 if __name__ == "__main__":
   discovery = BoseDiscovery()

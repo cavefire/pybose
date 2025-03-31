@@ -1,10 +1,16 @@
-from pybose import BoseSpeaker
+import sys
+sys.path.append("../")
+
+from pybose import BoseAuth, BoseSpeaker
 import asyncio
 import json
 import sys
 
-async def main(control_token: str, device_id: str, host: str) -> None:
-    bose = BoseSpeaker(control_token=control_token, device_id=device_id, host=host)
+async def main(email: str, password: str, device_id: str, host: str) -> None:
+    auth = BoseAuth()
+    control_token = auth.getControlToken(email, password, forceNew=True)
+    
+    bose = BoseSpeaker(bose_auth=auth, device_id=device_id, host=host)
     bose.attach_receiver(lambda data: print(f"Received unsolicited message: {json.dumps(data, indent=4)}"))
     await bose.connect()
     response = await bose.get_system_info()
@@ -17,10 +23,11 @@ async def main(control_token: str, device_id: str, host: str) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print(f"Usage: python {sys.argv[0]} <control_token> <device_id> <host>")
+    if len(sys.argv) != 5:
+        print(f"Usage: python {sys.argv[0]} <email> <password> <device_id> <host>")
         sys.exit(1)
-    control_token_arg = sys.argv[1]
-    device_id_arg = sys.argv[2]
-    host_arg = sys.argv[3]
-    asyncio.run(main(control_token_arg, device_id_arg, host_arg))
+    email = sys.argv[1]
+    password = sys.argv[2]
+    device_id_arg = sys.argv[3]
+    host_arg = sys.argv[4]
+    asyncio.run(main(email, password, device_id_arg, host_arg))

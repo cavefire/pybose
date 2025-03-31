@@ -1,3 +1,6 @@
+import sys
+sys.path.append("../")
+
 from pybose import BoseAuth
 import json
 import sys
