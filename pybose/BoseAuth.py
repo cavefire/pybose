@@ -16,7 +16,6 @@ import requests
 import time
 import json
 import logging
-import sys
 import jwt
 from typing import TypedDict, Optional, Dict, Any, cast
 
@@ -443,24 +442,23 @@ class BoseAuth:
         Raises:
             ValueError: If no control token is stored or required tokens are missing.
         """
-        if self._control_token is None:
-            raise ValueError("No control token stored to refresh.")
-        if access_token is None:
+        
+        if access_token is None and refresh_token is None:
+            if self._control_token is None:
+                raise ValueError("No control token stored to refresh.")
+            
             access_token = self._control_token.get("access_token")
-        if refresh_token is None:
-            refresh_token = self._control_token.get("refresh_token")
-
-        if access_token is None or refresh_token is None:
-            raise ValueError(
-                "Provide both the access_token and refresh_token or the control token"
-            )
+            refresh_token = self._control_token.get("refresh_token", "hhhaaa")
+        else:
+            if access_token is None or refresh_token is None:
+                raise ValueError("Provide both the access_token and refresh_token or the control token")
 
         fetched: Optional[RawControlToken] = self._fetch_keys(
             access_token=access_token, refresh_token=refresh_token
         )
         if fetched is None:
             raise ValueError("Failed to refresh token")
-        self._control_token = fetched
+        self._control_token.update(fetched)
         return {
             "access_token": self._control_token.get("access_token"),
             "refresh_token": self._control_token.get("refresh_token"),
@@ -593,12 +591,9 @@ class BoseAuth:
             )
             exp: int = decoded.get("exp", 0)
             valid: bool = exp > int(time.time())
-            if self._control_token is None:
-                self._control_token = {"access_token": token}
-            else:
-                self._control_token["access_token"] = token
             return valid
-        except Exception:
+        except Exception as e:
+            logging.error(f"Error decoding token: {e}")
             return False
 
     def getControlToken(
