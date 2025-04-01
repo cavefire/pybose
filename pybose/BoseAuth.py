@@ -442,16 +442,19 @@ class BoseAuth:
         Raises:
             ValueError: If no control token is stored or required tokens are missing.
         """
-        
-        if access_token is None and refresh_token is None:
-            if self._control_token is None:
-                raise ValueError("No control token stored to refresh.")
-            
+        if self._control_token is None:
+            raise ValueError("No control token stored to refresh.")
+        if access_token is None:
             access_token = self._control_token.get("access_token")
-            refresh_token = self._control_token.get("refresh_token", "hhhaaa")
-        else:
-            if access_token is None or refresh_token is None:
-                raise ValueError("Provide both the access_token and refresh_token or the control token")
+        if refresh_token is None:
+            refresh_token = self._control_token.get("refresh_token")
+
+        if access_token is None or refresh_token is None:
+            raise ValueError(
+                "Provide both the access_token and refresh_token or the control token",
+                access_token,
+                refresh_token,
+            )
 
         fetched: Optional[RawControlToken] = self._fetch_keys(
             access_token=access_token, refresh_token=refresh_token
@@ -591,9 +594,12 @@ class BoseAuth:
             )
             exp: int = decoded.get("exp", 0)
             valid: bool = exp > int(time.time())
+            if self._control_token is None:
+                self._control_token = {"access_token": token}
+            else:
+                self._control_token["access_token"] = token
             return valid
-        except Exception as e:
-            logging.error(f"Error decoding token: {e}")
+        except Exception:
             return False
 
     def getControlToken(
@@ -621,11 +627,8 @@ class BoseAuth:
         """
         if not forceNew and self._control_token is not None:
             access_token: Optional[str] = self._control_token.get("access_token")
-            if access_token and self.is_token_valid(access_token):
-                return {
-                    "access_token": access_token,
-                    "refresh_token": self._control_token.get("refresh_token", ""),
-                }
+            if access_token and self.is_token_valid():
+                return self._control_token
             else:
                 logging.debug("Token is expired. Trying to refresh token")
 

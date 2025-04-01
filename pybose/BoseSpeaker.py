@@ -119,6 +119,7 @@ class BoseSpeaker:
         version: int = 1,
         auto_reconnect: bool = True,
         bose_auth: BoseAuth = None,
+        on_exception: Optional[Callable[[Exception], None]] = None,
     ) -> None:
         self._device_id: Optional[str] = device_id
         self._host: str = host
@@ -140,6 +141,7 @@ class BoseSpeaker:
         self._auto_reconnect = auto_reconnect
         self._bose_auth: BoseAuth = bose_auth
         self._access_token = bose_auth._control_token.get("access_token")
+        self._on_exception = on_exception
 
     async def connect(self) -> None:
         """Connect to the WebSocket and start the receiver loop."""
@@ -201,9 +203,12 @@ class BoseSpeaker:
         version = version if version is not None else self._version
 
         if checkCapabilities and not self.has_capability(resource):
-            raise BoseFunctionNotSupportedException(
+            ex = BoseFunctionNotSupportedException(
                 f"Resource {resource} is not supported by the device."
             )
+            if self._on_exception:
+                self._on_exception(ex)
+            raise ex
 
         header: BR.BoseHeader = {
             "device": self._device_id,
@@ -236,7 +241,12 @@ class BoseSpeaker:
                     logging.error(
                         "WebSocket connection is closed. Cannot send message."
                     )
-                    raise Exception("WebSocket connection is closed.")
+                    ex = Exception(
+                        "WebSocket connection is closed. Cannot send message."
+                    )
+                    if self._on_exception:
+                        self._on_exception(ex)
+                    raise ex
 
             logging.debug(f"Sent message: {json.dumps(message, indent=4)}")
 
@@ -253,7 +263,7 @@ class BoseSpeaker:
                     self._responses.remove(response)
                     status = resp_header.get("status")
                     if status is None:
-                        raise BoseRequestException(
+                        ex = BoseRequestException(
                             method,
                             resource,
                             body,
@@ -261,6 +271,9 @@ class BoseSpeaker:
                             999,
                             f"pybose could not parse the message: {response}",
                         )
+                        if self._on_exception:
+                            self._on_exception(ex)
+                        raise ex
                     if status != 200:
                         error = response.get(
                             "error",
@@ -269,7 +282,7 @@ class BoseSpeaker:
                                 "message": f"pybose could not determine the error, but status code is {status}",
                             },
                         )
-                        raise BoseRequestException(
+                        ex = BoseRequestException(
                             method,
                             resource,
                             body,
@@ -277,6 +290,9 @@ class BoseSpeaker:
                             error["code"],
                             error["message"],
                         )
+                        if self._on_exception:
+                            self._on_exception(ex)
+                        raise ex
                     return response["body"] if not withHeaders else response
             await asyncio.sleep(0.1)
 
@@ -330,7 +346,10 @@ class BoseSpeaker:
     def has_capability(self, endpoint: str) -> bool:
         """Return True if the device has the specified capability."""
         if self._capabilities is None:
-            raise BoseCapabilitiesNotLoadedException()
+            ex = BoseCapabilitiesNotLoadedException()
+            if self._on_exception:
+                self._on_exception(ex)
+            raise ex
         groups: List[BR.CapabilityGroup] = self._capabilities.get("group", [])
         endpoints: List[str] = [
             ep.get("endpoint") for group in groups for ep in group.get("endpoints", [])
@@ -455,7 +474,10 @@ class BoseSpeaker:
             "height",
             "avSync",
         ]:
-            raise BoseInvalidAudioSettingException(option)
+            ex = BoseInvalidAudioSettingException(option)
+            if self._on_exception:
+                self._on_exception(ex)
+            raise ex
         return BR.Audio(await self._request("/audio/" + option, "GET"))
 
     async def set_audio_setting(self, option: str, value: int) -> BR.Audio:
@@ -468,7 +490,10 @@ class BoseSpeaker:
             "height",
             "avSync",
         ]:
-            raise BoseInvalidAudioSettingException(option)
+            ex = BoseInvalidAudioSettingException(option)
+            if self._on_exception:
+                self._on_exception(ex)
+            raise ex
         return BR.Audio(
             await self._request("/audio/" + option, "POST", {"value": value})
         )
