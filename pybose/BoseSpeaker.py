@@ -639,6 +639,7 @@ class BoseCapabilitiesNotLoadedException(Exception):
 
 class BoseInvalidAudioSettingException(Exception):
     def __init__(self, setting: str) -> None:
+        self.setting = setting
         self.message = f"Invalid audio setting: {setting}"
         super().__init__(self.message)
 
@@ -653,7 +654,13 @@ class BoseRequestException(Exception):
         error_status: int,
         message: str,
     ) -> None:
+        self.method = method
+        self.resource = resource
+        self.body = body
+        self.http_status = http_status
+        self.error_status = error_status
         self.message = message
+
         super().__init__(
             f"'{method} {resource}' returned {http_status}: Bose Error #{error_status} - {self.message}"
         )
