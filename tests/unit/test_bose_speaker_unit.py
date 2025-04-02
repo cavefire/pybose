@@ -6,8 +6,7 @@ from unittest.mock import patch
 
 from pybose.BoseSpeaker import (
     BoseSpeaker,
-    BoseFunctionNotSupportedException,
-    BoseCapabilitiesNotLoadedException,
+    BoseAuth,
     BoseInvalidAudioSettingException,
     BoseRequestException,
 )
@@ -38,7 +37,9 @@ async def fake_connect(url, subprotocols, ssl):
 # --- Synchronous methods ---
 
 def test_bose_speaker_init():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     assert bose.get_device_id() == "dummy_device"
     assert bose._host == "dummy_host"
     # Assuming _req_id starts at 1
@@ -51,7 +52,9 @@ def test_bose_speaker_init():
     assert isinstance(bose._receivers, dict)
 
 def test_attach_and_detach_receiver():
-    bose = BoseSpeaker("dummy_token", "dummy_host")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host")
     callback = lambda msg: None
     rec_id = bose.attach_receiver(callback)
     assert rec_id in bose._receivers
@@ -60,7 +63,9 @@ def test_attach_and_detach_receiver():
 
 @pytest.mark.asyncio
 async def test_request_success():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     bose._req_id = 1
     # Patch has_capability to always return True
     bose.has_capability = lambda endpoint: True
@@ -85,7 +90,9 @@ async def test_request_success():
 
 @pytest.mark.asyncio
 async def test_request_error():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     bose._req_id = 1
     bose.has_capability = lambda endpoint: True
 
@@ -128,7 +135,9 @@ class FakeWebsocket:
 
 @pytest.mark.asyncio
 async def test_connect_and_disconnect():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     # Override connect to not actually call websockets.connect
     bose.connect = lambda: asyncio.sleep(0)
     bose._websocket = FakeWebsocket()
@@ -141,7 +150,9 @@ async def test_connect_and_disconnect():
 # --- Testing wrapper functions that delegate to _request ---
 @pytest.mark.asyncio
 async def test_get_capabilities():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_capabilities = {"group": []}
     async def fake_request(resource, method, body=None, **kwargs):
         if body is None:
@@ -154,7 +165,9 @@ async def test_get_capabilities():
 
 @pytest.mark.asyncio
 async def test_get_system_info():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_info = {"system": "info"}
     async def fake_request(resource, method, body=None, **kwargs):
         if body is None:
@@ -166,7 +179,9 @@ async def test_get_system_info():
 
 @pytest.mark.asyncio
 async def test_get_audio_volume():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_volume = {"volume": 50}
     async def fake_request(resource, method, body=None, **kwargs):
         if body is None:
@@ -178,7 +193,9 @@ async def test_get_audio_volume():
 
 @pytest.mark.asyncio
 async def test_set_audio_volume():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     volume = 75
     captured_body = None
     async def fake_request(resource, method, body=None, **kwargs):
@@ -194,7 +211,9 @@ async def test_set_audio_volume():
 
 @pytest.mark.asyncio
 async def test_get_now_playing():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_now_playing = {"nowPlaying": "song"}
     async def fake_request(resource, method, body=None, **kwargs):
         if body is None:
@@ -206,7 +225,9 @@ async def test_get_now_playing():
 
 @pytest.mark.asyncio
 async def test_get_power_state_and_set_power_state():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_power = {"power": "ON"}
     async def fake_request(resource, method, body=None, **kwargs):
         if body is None:
@@ -232,7 +253,9 @@ async def test_get_power_state_and_set_power_state():
 # --- Testing transport control functions (pause, play, skip, seek) ---
 @pytest.mark.asyncio
 async def test_control_transport_functions():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     async def fake_control_transport(control):
         return {"state": control}
     bose._control_transport = fake_control_transport
@@ -261,7 +284,9 @@ async def test_control_transport_functions():
 # --- Testing request_playback_preset ---
 @pytest.mark.asyncio
 async def test_request_playback_preset():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_preset = {
         "actions": [
             {"payload": {"contentItem": {
@@ -284,7 +309,9 @@ async def test_request_playback_preset():
 # --- Testing subscribe and source functions ---
 @pytest.mark.asyncio
 async def test_subscribe():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_response = {"subscribed": True}
     captured_args = None
     async def fake_request(resource, method, body=None, version=None, **kwargs):
@@ -300,7 +327,9 @@ async def test_subscribe():
 
 @pytest.mark.asyncio
 async def test_switch_tv_source():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     async def fake_set_source(source, sourceAccount):
         return {"nowPlaying": "tv"}
     bose.set_source = fake_set_source
@@ -309,7 +338,9 @@ async def test_switch_tv_source():
 
 @pytest.mark.asyncio
 async def test_set_source():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     async def fake_request(resource, method, body=None, **kwargs):
         if body is None:
             body = {}
@@ -328,7 +359,9 @@ async def test_set_source():
 # --- Testing get_sources ---
 @pytest.mark.asyncio
 async def test_get_sources():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_sources = {"sources": ["source1", "source2"]}
     async def fake_request(*args, **kwargs):
         return dummy_sources
@@ -339,7 +372,9 @@ async def test_get_sources():
 # --- Testing audio setting functions ---
 @pytest.mark.asyncio
 async def test_get_audio_setting_valid():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_audio = {"audio": "value"}
     async def fake_request(resource, method, body=None, **kwargs):
         if body is None:
@@ -351,13 +386,17 @@ async def test_get_audio_setting_valid():
 
 @pytest.mark.asyncio
 async def test_get_audio_setting_invalid():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     with pytest.raises(BoseInvalidAudioSettingException):
         await bose.get_audio_setting("invalid_option")
 
 @pytest.mark.asyncio
 async def test_set_audio_setting_valid():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     option = "treble"
     value = 10
     async def fake_request(resource, method, body=None, **kwargs):
@@ -371,7 +410,9 @@ async def test_set_audio_setting_valid():
 # --- Testing accessories functions ---
 @pytest.mark.asyncio
 async def test_get_accessories():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_accessories = {"accessories": True}
     async def fake_request(*args, **kwargs):
         return dummy_accessories
@@ -381,7 +422,9 @@ async def test_get_accessories():
 
 @pytest.mark.asyncio
 async def test_put_accessories():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     class DummyEnabled:
         subs = True
         rears = False
@@ -405,7 +448,9 @@ async def test_put_accessories():
 # --- Testing battery, audio mode, dual mono, and latency mode functions ---
 @pytest.mark.asyncio
 async def test_get_battery_status():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_battery = {"battery": 80}
     async def fake_request(*args, **kwargs):
         return dummy_battery
@@ -415,7 +460,9 @@ async def test_get_battery_status():
 
 @pytest.mark.asyncio
 async def test_get_audio_mode_and_set_audio_mode():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_mode = {"mode": "stereo"}
     async def fake_request(*args, **kwargs):
         return dummy_mode
@@ -441,7 +488,9 @@ async def test_get_audio_mode_and_set_audio_mode():
 
 @pytest.mark.asyncio
 async def test_get_dual_mono_and_set_dual_mono_setting():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_dm = {"dualMono": "setting"}
     async def fake_request(*args, **kwargs):
         return dummy_dm
@@ -467,7 +516,9 @@ async def test_get_dual_mono_and_set_dual_mono_setting():
 
 @pytest.mark.asyncio
 async def test_get_rebroadcast_latency_mode_and_set_rebroadcast_latency_mode():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_mode = {"mode": "auto"}
     async def fake_request(*args, **kwargs):
         return dummy_mode
@@ -494,7 +545,9 @@ async def test_get_rebroadcast_latency_mode_and_set_rebroadcast_latency_mode():
 # --- Testing active groups functions ---
 @pytest.mark.asyncio
 async def test_get_active_groups():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="dummy_device")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
     dummy_groups = {"activeGroups": [{"group": "group1"}, {"group": "group2"}]}
     async def fake_request(*args, **kwargs):
         return dummy_groups
@@ -504,7 +557,9 @@ async def test_get_active_groups():
 
 @pytest.mark.asyncio
 async def test_set_active_group():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="device1")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
     captured_body = None
     async def fake_request(resource, method, body=None, **kwargs):
         nonlocal captured_body
@@ -521,7 +576,9 @@ async def test_set_active_group():
 
 @pytest.mark.asyncio
 async def test_add_and_remove_from_active_group():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="device1")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
     captured_body = None
     async def fake_request(resource, method, body=None, **kwargs):
         nonlocal captured_body
@@ -543,7 +600,9 @@ async def test_add_and_remove_from_active_group():
 
 @pytest.mark.asyncio
 async def test_stop_active_groups():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="device1")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
     async def fake_request(*args, **kwargs):
         return True
     bose._request = fake_request
@@ -553,7 +612,9 @@ async def test_stop_active_groups():
 # --- Testing system timeout functions ---
 @pytest.mark.asyncio
 async def test_get_and_set_system_timeout():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="device1")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
     dummy_timeout = {"timeout": 30}
     async def fake_request(*args, **kwargs):
         return dummy_timeout
@@ -576,7 +637,9 @@ async def test_get_and_set_system_timeout():
 # --- Testing CEC and product settings functions ---
 @pytest.mark.asyncio
 async def test_get_and_set_cec_settings():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="device1")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
     dummy_cec = {"cec": "settings"}
     async def fake_request(*args, **kwargs):
         return dummy_cec
@@ -595,7 +658,9 @@ async def test_get_and_set_cec_settings():
 
 @pytest.mark.asyncio
 async def test_get_product_settings():
-    bose = BoseSpeaker("dummy_token", "dummy_host", device_id="device1")
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
     dummy_settings = {"setting": "value"}
     async def fake_request(*args, **kwargs):
         return dummy_settings
