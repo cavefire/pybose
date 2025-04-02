@@ -6,16 +6,6 @@ This Python project provides an unofficial API to control Bose Soundbars and Spe
 
 Also check out my Homeassistant integration: [Bose-Homeassistant](https://github.com/cavefire/Bose-Homeassistant)
 
-## Features
-
-Currently supported functionalities:
-- Retrieve system information (`get_system_info`)
-- Get and set audio volume (`get_audio_volume`, `set_audio_volume`)
-- Get playback information (`get_now_playing`)
-- Control playback: play, pause, skip next, skip previous
-- Check Bluetooth status (`get_bluetooth_status`)
-- Get and set power state (`get_power_state`, `set_power_state`)
-
 ### Tested Devices
 - Bose Soundbar Ultra
 - Bose Soundbar 900
@@ -40,7 +30,7 @@ BOSE decided that in order to control your devices locally (!) you still need to
 
 Sadly there is no official documentation about this (at least none I could find), so I had to reverse engineer the API calls the official app makes. 
 
-**Note:** The token is a JWT with a limited lifetime and needs to be refreshed manually. Consider caching the token to reduce API calls. Also refreshing the token is not implemented yet, so you need to rerun the whole process.
+**Note:** The token is a JWT with a limited lifetime and needs to be refreshed manually. Consider caching the token to reduce API calls.
 
 #### Usage of `BoseAuth`
 ```python
@@ -72,7 +62,7 @@ Now you are ready to finally control your speaker! You can use the `BoseSpeaker`
 
 ```python
 bose = BoseSpeaker(
-    control_token="your_control_token",
+    bose_auth=auth
     device_id="your_device_GUID",
     host="your_device_IP"
 )
@@ -107,7 +97,7 @@ After attaching to the speaker, you can use the following functions:
 * get_accessories
 * get_battery_status
 
-**Note:** The device supports much more. But for now, these are the only functions implemented. Feel free to add more, or open an issue if you have a specific need.
+**Note:** The device supports more. But for now, these are the only functions implemented. Feel free to add more, or open an issue if you have a specific need.
 
 ## Limitations
 * **Unofficial API:** The API is not officially supported by Bose and may break at any time.
@@ -127,13 +117,13 @@ The first item on my wishlist is a **Homeassistant** integration. I am currently
 
 **Other items on my wishlist:**
 
-- [ ] Implement token refresh
-- [ ] Implement groups
+- [x] Implement token refresh
+- [x] Implement groups
 - [x] Implement source (TV / Optical / AUX) switching
 - [ ] Implement source (Bluetooth) switching
 - [x] Implement equalizer settings
-- [ ] Implement bass module settings
-- [ ] Implement surround speaker settings
+- [x] Implement bass module settings
+- [x] Implement surround speaker settings
 
 And lastly, a way to not use the BOSE cloud at all would be nice. But I am not sure, if this is possible at all.
 
