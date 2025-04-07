@@ -140,7 +140,6 @@ class BoseSpeaker:
         self._capabilities: Optional[BR.Capabilities] = None
         self._auto_reconnect = auto_reconnect
         self._bose_auth: BoseAuth = bose_auth
-        self._access_token = bose_auth._control_token.get("access_token")
         self._on_exception = on_exception
 
     async def connect(self) -> None:
@@ -190,13 +189,7 @@ class BoseSpeaker:
         if body is None:
             body = {}
 
-        if self._bose_auth:
-            if not self._bose_auth.is_token_valid():
-                logging.warning("Token is not valid. Refreshing token.")
-                control_token = self._bose_auth.do_token_refresh()
-                self._access_token = control_token.get("access_token")
-
-        token: str = self._access_token
+        token: str = self._bose_auth._control_token.get("access_token")
         req_id: int = self._req_id
         self._req_id += 1
 
