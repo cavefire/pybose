@@ -369,6 +369,11 @@ class BoseSpeaker:
         body = {"value": volume}
         return BR.AudioVolume(await self._request("/audio/volume", "PUT", body))
 
+    async def set_audio_volume_muted(self, muted: bool) -> BR.AudioVolume:
+        """Set the audio volume muted state."""
+        body = {"muted": muted}
+        return BR.AudioVolume(await self._request("/audio/volume", "PUT", body))
+
     async def get_now_playing(self) -> BR.ContentNowPlaying:
         """Retrieve the currently playing content."""
         return BR.ContentNowPlaying(await self._request("/content/nowPlaying", "GET"))
