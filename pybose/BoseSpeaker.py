@@ -189,7 +189,7 @@ class BoseSpeaker:
         if body is None:
             body = {}
 
-        token: str = self._bose_auth._control_token.get("access_token")
+        token: str = self._bose_auth.getCachedToken().get("access_token")
         req_id: int = self._req_id
         self._req_id += 1
 

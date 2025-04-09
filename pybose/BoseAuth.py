@@ -602,6 +602,15 @@ class BoseAuth:
         except Exception:
             return False
 
+    def getCachedToken(self) -> Optional[ControlToken]:
+        """
+        Get the cached control token.
+
+        Returns:
+            Optional[ControlToken]: The cached control token if available, otherwise None.
+        """
+        return self._control_token
+
     def getControlToken(
         self,
         email: Optional[str] = None,
