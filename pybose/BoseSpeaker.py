@@ -159,7 +159,8 @@ class BoseSpeaker:
     async def disconnect(self) -> None:
         """Stop the receiver loop and close the WebSocket connection."""
         self._stop_event.set()
-        if self._receiver_task:
+        current_task = asyncio.current_task()
+        if self._receiver_task and self._receiver_task != current_task:
             await self._receiver_task
         if self._websocket:
             await self._websocket.close()
@@ -322,7 +323,7 @@ class BoseSpeaker:
             logging.warning("WebSocket connection lost.")
             if self._auto_reconnect:
                 logging.info("Reconnecting...")
-                await self.connect()
+                asyncio.create_task(self.connect())
             else:
                 logging.error("WebSocket connection closed.")
         except Exception as e:
