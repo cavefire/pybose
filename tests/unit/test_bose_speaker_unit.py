@@ -667,3 +667,403 @@ async def test_get_product_settings():
     bose._request = fake_request
     result = await bose.get_product_settings()
     assert result == dummy_settings
+
+
+# --- Testing Bluetooth functions ---
+@pytest.mark.asyncio
+async def test_get_bluetooth_source_status():
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
+    dummy_source_status = {
+        "devices": []
+    }
+    async def fake_request(resource, method, body=None, **kwargs):
+        if body is None:
+            body = {}
+        assert resource == "/bluetooth/source/status"
+        assert method == "GET"
+        return dummy_source_status
+    bose._request = fake_request  # type: ignore
+    result = await bose.get_bluetooth_source_status()
+    assert result == dummy_source_status
+
+
+@pytest.mark.asyncio
+async def test_get_bluetooth_sink_status():
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
+    dummy_sink_status = {
+        "activeDevice": "3c:5e:b2:f5:c1:25",
+        "devices": [
+            {
+                "deviceClass": "7A020C",
+                "mac": "3c:5e:b2:f5:c1:25",
+                "name": "Test Phone"
+            }
+        ],
+        "status": "APP_CONNECTED"
+    }
+    async def fake_request(resource, method, body=None, **kwargs):
+        if body is None:
+            body = {}
+        assert resource == "/bluetooth/sink/status"
+        assert method == "GET"
+        return dummy_sink_status
+    bose._request = fake_request  # type: ignore
+    result = await bose.get_bluetooth_sink_status()
+    assert result == dummy_sink_status
+    assert result.get("activeDevice") == "3c:5e:b2:f5:c1:25"  # type: ignore
+    assert len(result.get("devices", [])) == 1  # type: ignore
+    assert result.get("devices", [])[0]["name"] == "Test Phone"  # type: ignore
+
+
+@pytest.mark.asyncio
+async def test_get_bluetooth_sink_status_pairable():
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
+    dummy_sink_status = {
+        "devices": [],
+        "status": "APP_PAIRABLE"
+    }
+    async def fake_request(resource, method, body=None, **kwargs):
+        if body is None:
+            body = {}
+        return dummy_sink_status
+    bose._request = fake_request  # type: ignore
+    result = await bose.get_bluetooth_sink_status()
+    assert result.get("status") == "APP_PAIRABLE"  # type: ignore
+    assert len(result.get("devices", [])) == 0  # type: ignore
+
+
+@pytest.mark.asyncio
+async def test_get_bluetooth_sink_list():
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
+    dummy_sink_list = {
+        "devices": [
+            {
+                "deviceClass": "38010C",
+                "mac": "df:12:af:0c:6b:ba",
+                "name": "Test MacBook Pro"
+            },
+            {
+                "deviceClass": "7A020C",
+                "mac": "3c:5e:b2:f5:c1:25", 
+                "name": "Test Phone"
+            }
+        ]
+    }
+    async def fake_request(resource, method, body=None, **kwargs):
+        if body is None:
+            body = {}
+        assert resource == "/bluetooth/sink/list"
+        assert method == "GET"
+        return dummy_sink_list
+    bose._request = fake_request  # type: ignore
+    result = await bose.get_bluetooth_sink_list()
+    assert result == dummy_sink_list
+    assert len(result.get("devices", [])) == 2  # type: ignore
+    assert result.get("devices", [])[0]["name"] == "Test MacBook Pro"  # type: ignore
+    assert result.get("devices", [])[1]["name"] == "Test Phone"  # type: ignore
+
+
+@pytest.mark.asyncio
+async def test_set_bluetooth_sink_pairable():
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
+    captured_args = None
+    async def fake_request(resource, method, body=None, **kwargs):
+        nonlocal captured_args
+        if body is None:
+            body = {}
+        captured_args = (resource, method, body)
+        return {}
+    bose._request = fake_request  # type: ignore
+    await bose.set_bluetooth_sink_pairable()
+    assert captured_args is not None
+    assert captured_args[0] == "/bluetooth/sink/pairable"
+    assert captured_args[1] == "POST"
+    assert captured_args[2] == {}
+
+
+@pytest.mark.asyncio
+async def test_connect_bluetooth_sink_device():
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
+    mac_address = "3c:5e:b2:f5:c1:25"
+    captured_args = None
+    async def fake_request(resource, method, body=None, **kwargs):
+        nonlocal captured_args
+        if body is None:
+            body = {}
+        captured_args = (resource, method, body)
+        return {}
+    bose._request = fake_request  # type: ignore
+    await bose.connect_bluetooth_sink_device(mac_address)
+    assert captured_args is not None
+    assert captured_args[0] == "/bluetooth/sink/connect"
+    assert captured_args[1] == "POST"
+    assert captured_args[2] == {"mac": mac_address}
+
+
+@pytest.mark.asyncio
+async def test_disconnect_bluetooth_sink_device():
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
+    mac_address = "3c:5e:b2:f5:c1:25"
+    captured_args = None
+    async def fake_request(resource, method, body=None, **kwargs):
+        nonlocal captured_args
+        if body is None:
+            body = {}
+        captured_args = (resource, method, body)
+        return {}
+    bose._request = fake_request  # type: ignore
+    await bose.disconnect_bluetooth_sink_device(mac_address)
+    assert captured_args is not None
+    assert captured_args[0] == "/bluetooth/sink/disconnect"
+    assert captured_args[1] == "POST"
+    assert captured_args[2] == {"mac": mac_address}
+
+
+@pytest.mark.asyncio
+async def test_remove_bluetooth_sink_device():
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
+    mac_address = "3c:5e:b2:f5:c1:25"
+    captured_args = None
+    async def fake_request(resource, method, body=None, **kwargs):
+        nonlocal captured_args
+        if body is None:
+            body = {}
+        captured_args = (resource, method, body)
+        return {}
+    bose._request = fake_request  # type: ignore
+    await bose.remove_bluetooth_sink_device(mac_address)
+    assert captured_args is not None
+    assert captured_args[0] == "/bluetooth/sink/remove"
+    assert captured_args[1] == "POST"
+    assert captured_args[2] == {"mac": mac_address}
+
+
+@pytest.mark.asyncio
+async def test_bluetooth_connection_workflow():
+    """Test a complete Bluetooth connection workflow based on bluetooth.json"""
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
+    
+    request_calls = []
+    
+    async def fake_request(resource, method, body=None, **kwargs):
+        if body is None:
+            body = {}
+        request_calls.append((resource, method, body))
+        
+        # Simulate different responses based on the request
+        if resource == "/bluetooth/sink/list" and method == "GET":
+            if len(request_calls) == 1:  # First call - empty list
+                return {"devices": []}
+            else:  # After pairing - device appears
+                return {
+                    "devices": [
+                        {
+                            "deviceClass": "38010C",
+                            "mac": "df:12:af:0c:6b:ba",
+                            "name": "Test MacBook Pro"
+                        }
+                    ]
+                }
+        elif resource == "/bluetooth/sink/status" and method == "GET":
+            if len(request_calls) <= 2:  # Before connection
+                return {"devices": [], "status": "APP_PAIRABLE"}
+            else:  # After connection
+                return {
+                    "activeDevice": "df:12:af:0c:6b:ba",
+                    "devices": [
+                        {
+                            "deviceClass": "38010C",
+                            "mac": "df:12:af:0c:6b:ba",
+                            "name": "Test MacBook Pro"
+                        }
+                    ],
+                    "status": "APP_CONNECTED"
+                }
+        elif resource == "/bluetooth/sink/pairable" and method == "POST":
+            return {}
+        elif resource == "/bluetooth/sink/connect" and method == "POST":
+            return {}
+        else:
+            return {}
+    
+    bose._request = fake_request  # type: ignore
+    
+    # Step 1: Get initial device list (should be empty)
+    device_list = await bose.get_bluetooth_sink_list()
+    assert len(device_list.get("devices", [])) == 0  # type: ignore
+    
+    # Step 2: Check initial status (should be pairable)
+    status = await bose.get_bluetooth_sink_status()
+    assert status.get("status") == "APP_PAIRABLE"  # type: ignore
+    
+    # Step 3: Make device pairable
+    await bose.set_bluetooth_sink_pairable()
+    
+    # Step 4: After pairing, device appears in list
+    device_list = await bose.get_bluetooth_sink_list()
+    assert len(device_list.get("devices", [])) == 1  # type: ignore
+    assert device_list.get("devices", [])[0]["name"] == "Test MacBook Pro"  # type: ignore
+    
+    # Step 5: Connect to the device
+    mac_address = device_list.get("devices", [])[0]["mac"]  # type: ignore
+    await bose.connect_bluetooth_sink_device(mac_address)
+    
+    # Step 6: Check final status (should be connected)
+    final_status = await bose.get_bluetooth_sink_status()
+    assert final_status.get("status") == "APP_CONNECTED"  # type: ignore
+    assert final_status.get("activeDevice") == mac_address  # type: ignore
+    
+    # Verify the correct sequence of API calls
+    assert len(request_calls) == 6
+    assert request_calls[0] == ("/bluetooth/sink/list", "GET", {})
+    assert request_calls[1] == ("/bluetooth/sink/status", "GET", {})
+    assert request_calls[2] == ("/bluetooth/sink/pairable", "POST", {})
+    assert request_calls[3] == ("/bluetooth/sink/list", "GET", {})
+    assert request_calls[4] == ("/bluetooth/sink/connect", "POST", {"mac": mac_address})
+    assert request_calls[5] == ("/bluetooth/sink/status", "GET", {})
+
+
+@pytest.mark.asyncio
+async def test_bluetooth_disconnection_workflow():
+    """Test Bluetooth disconnection workflow based on bluetooth.json"""
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
+    
+    request_calls = []
+    
+    async def fake_request(resource, method, body=None, **kwargs):
+        if body is None:
+            body = {}
+        request_calls.append((resource, method, body))
+        
+        # Simulate different responses based on the request sequence
+        if resource == "/bluetooth/sink/status" and method == "GET":
+            if len(request_calls) == 1:  # Initially connected
+                return {
+                    "activeDevice": "3c:5e:b2:f5:c1:25",
+                    "devices": [
+                        {
+                            "deviceClass": "7A020C",
+                            "mac": "3c:5e:b2:f5:c1:25",
+                            "name": "Test Phone"
+                        }
+                    ],
+                    "status": "APP_CONNECTED"
+                }
+            else:  # After disconnection
+                return {
+                    "devices": [],
+                    "status": "APP_PAIRABLE"
+                }
+        elif resource == "/bluetooth/sink/disconnect" and method == "POST":
+            return {}
+        else:
+            return {}
+    
+    bose._request = fake_request  # type: ignore
+    
+    # Step 1: Check initial status (should be connected)
+    status = await bose.get_bluetooth_sink_status()
+    assert status.get("status") == "APP_CONNECTED"  # type: ignore
+    assert status.get("activeDevice") == "3c:5e:b2:f5:c1:25"  # type: ignore
+    
+    # Step 2: Disconnect the device
+    mac_address = status.get("activeDevice")  # type: ignore
+    assert mac_address is not None
+    await bose.disconnect_bluetooth_sink_device(mac_address)
+    
+    # Step 3: Check final status (should be pairable)
+    final_status = await bose.get_bluetooth_sink_status()
+    assert final_status.get("status") == "APP_PAIRABLE"  # type: ignore
+    assert len(final_status.get("devices", [])) == 0  # type: ignore
+    
+    # Verify the correct sequence of API calls
+    assert len(request_calls) == 3
+    assert request_calls[0] == ("/bluetooth/sink/status", "GET", {})
+    assert request_calls[1] == ("/bluetooth/sink/disconnect", "POST", {"mac": mac_address})
+    assert request_calls[2] == ("/bluetooth/sink/status", "GET", {})
+
+
+@pytest.mark.asyncio
+async def test_bluetooth_device_management():
+    """Test Bluetooth device management operations (remove/unpair)"""
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="device1")
+    
+    request_calls = []
+    
+    async def fake_request(resource, method, body=None, **kwargs):
+        if body is None:
+            body = {}
+        request_calls.append((resource, method, body))
+        
+        if resource == "/bluetooth/sink/list" and method == "GET":
+            if len(request_calls) == 1:  # Initially has devices
+                return {
+                    "devices": [
+                        {
+                            "deviceClass": "38010C",
+                            "mac": "df:12:af:0c:6b:ba",
+                            "name": "Test MacBook Pro"
+                        },
+                        {
+                            "deviceClass": "7A020C",
+                            "mac": "3c:5e:b2:f5:c1:25",
+                            "name": "Test Phone"
+                        }
+                    ]
+                }
+            else:  # After removal
+                return {
+                    "devices": [
+                        {
+                            "deviceClass": "38010C",
+                            "mac": "df:12:af:0c:6b:ba",
+                            "name": "Test MacBook Pro"
+                        }
+                    ]
+                }
+        elif resource == "/bluetooth/sink/remove" and method == "POST":
+            return {}
+        else:
+            return {}
+    
+    bose._request = fake_request  # type: ignore
+    
+    # Step 1: Get device list
+    device_list = await bose.get_bluetooth_sink_list()
+    assert len(device_list.get("devices", [])) == 2  # type: ignore
+    
+    # Step 2: Remove one device
+    device_to_remove = device_list.get("devices", [])[1]["mac"]  # type: ignore
+    await bose.remove_bluetooth_sink_device(device_to_remove)
+    
+    # Step 3: Verify device was removed
+    updated_list = await bose.get_bluetooth_sink_list()
+    assert len(updated_list.get("devices", [])) == 1  # type: ignore
+    
+    # Verify the correct sequence of API calls
+    assert len(request_calls) == 3
+    assert request_calls[0] == ("/bluetooth/sink/list", "GET", {})
+    assert request_calls[1] == ("/bluetooth/sink/remove", "POST", {"mac": device_to_remove})
+    assert request_calls[2] == ("/bluetooth/sink/list", "GET", {})
