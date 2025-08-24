@@ -79,6 +79,9 @@ class ContentItem(TypedDict, total=False):
     source: str
     sourceAccount: str
     containerArt: str
+    location: str
+    name: str
+    type: str
 
 
 class ContainerCapabilities(TypedDict, total=False):
@@ -312,7 +315,7 @@ class PresetMetadata(TypedDict):
     subType: str
 
 
-class ContentItem(TypedDict):
+class PresetContentItem(TypedDict):
     containerArt: str
     location: str
     name: str
@@ -323,7 +326,7 @@ class ContentItem(TypedDict):
 
 
 class PresetActionPayload(TypedDict):
-    contentItem: ContentItem
+    contentItem: PresetContentItem
 
 
 class PresetAction(TypedDict):
@@ -383,3 +386,63 @@ class NetworkStatus(TypedDict):
     isPrimaryUp: bool
     primary: str
     primaryIpAddress: str
+
+
+# Bluetooth Device
+class BluetoothDevice(TypedDict):
+    deviceClass: str
+    mac: str
+    name: str
+
+
+# Bluetooth Sink List
+class BluetoothSinkList(TypedDict):
+    devices: List[BluetoothDevice]
+
+
+# Bluetooth Sink Status
+class BluetoothSinkStatusEnum(enumerate):
+    APP_PAIRABLE = "APP_PAIRABLE"
+    APP_CONNECTED = "APP_CONNECTED"
+    DEVICE_CONNECTING = "DEVICE_CONNECTING"
+    DEVICE_DISCONNECTING = "DEVICE_DISCONNECTING"
+    DEVICE_CONNECTED = "DEVICE_CONNECTED"
+    DEVICE_DISCONNECTED = "DEVICE_DISCONNECTED"
+
+
+class BluetoothSinkStatus(TypedDict, total=False):
+    activeDevice: str
+    devices: List[BluetoothDevice]
+    status: BluetoothSinkStatusEnum
+
+
+# Bluetooth Source Status
+class BluetoothSourceStatus(TypedDict):
+    devices: List[BluetoothDevice]
+
+
+# Bluetooth Connection Status (for notifications)
+class BluetoothConnectionStatusEnum(enumerate):
+    DEVICE_CONNECTING = "DEVICE_CONNECTING"
+    DEVICE_DISCONNECTING = "DEVICE_DISCONNECTING"
+    DEVICE_CONNECTED = "DEVICE_CONNECTED"
+    DEVICE_DISCONNECTED = "DEVICE_DISCONNECTED"
+
+
+class BluetoothConnectionStatus(TypedDict):
+    deviceClass: str
+    mac: str
+    name: str
+    status: BluetoothConnectionStatusEnum
+
+
+# Bluetooth Pair Status (for notifications)
+class BluetoothPairStatusEnum(enumerate):
+    PAIRING = "PAIRING"
+    PAIRED = "PAIRED"
+    UNPAIRED = "UNPAIRED"
+
+
+class BluetoothPairStatus(TypedDict):
+    mac: str
+    status: BluetoothPairStatusEnum

@@ -372,9 +372,38 @@ class BoseSpeaker:
         """Retrieve the currently playing content."""
         return BR.ContentNowPlaying(await self._request("/content/nowPlaying", "GET"))
 
-    async def get_bluetooth_status(self) -> dict:
-        """Retrieve Bluetooth status."""
-        return await self._request("/bluetooth/source/status", "GET")
+    async def get_bluetooth_source_status(self) -> BR.BluetoothSourceStatus:
+        """Retrieve Bluetooth source status."""
+        return await self._request("/bluetooth/source/status", "GET")  # type: ignore
+
+    async def get_bluetooth_sink_status(self) -> BR.BluetoothSinkStatus:
+        """Retrieve Bluetooth sink status."""
+        return await self._request("/bluetooth/sink/status", "GET")  # type: ignore
+
+    async def get_bluetooth_sink_list(self) -> BR.BluetoothSinkList:
+        """Retrieve list of Bluetooth sink devices."""
+        return await self._request("/bluetooth/sink/list", "GET")  # type: ignore
+
+    async def set_bluetooth_sink_pairable(self) -> None:
+        """Make the device pairable for Bluetooth connections."""
+        await self._request("/bluetooth/sink/pairable", "POST", withHeaders=True)
+
+    async def connect_bluetooth_sink_device(self, mac_address: str) -> None:
+        """Connect to a specific Bluetooth sink device by MAC address."""
+        body = {"mac": mac_address}
+        await self._request("/bluetooth/sink/connect", "POST", body, withHeaders=True)
+
+    async def disconnect_bluetooth_sink_device(self, mac_address: str) -> None:
+        """Disconnect from a specific Bluetooth sink device by MAC address."""
+        body = {"mac": mac_address}
+        await self._request(
+            "/bluetooth/sink/disconnect", "POST", body, withHeaders=True
+        )
+
+    async def remove_bluetooth_sink_device(self, mac_address: str) -> None:
+        """Remove (unpair) a specific Bluetooth sink device by MAC address."""
+        body = {"mac": mac_address}
+        await self._request("/bluetooth/sink/remove", "POST", body, withHeaders=True)
 
     async def get_power_state(self) -> BR.SystemPowerControl:
         """Retrieve the power state of the device."""
