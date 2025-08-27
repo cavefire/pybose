@@ -141,6 +141,7 @@ class BoseSpeaker:
         self._auto_reconnect = auto_reconnect
         self._bose_auth: BoseAuth = bose_auth
         self._on_exception = on_exception
+        self._connected = False
 
     async def connect(self) -> None:
         """Connect to the WebSocket and start the receiver loop."""
@@ -155,6 +156,7 @@ class BoseSpeaker:
             logging.debug("Subscribing to resources from previous session.")
             await self.subscribe(self._subscribed_resources)
         await self.get_capabilities()
+        self._connected = True
 
     async def disconnect(self) -> None:
         """Stop the receiver loop and close the WebSocket connection."""
@@ -165,6 +167,7 @@ class BoseSpeaker:
         if self._websocket:
             await self._websocket.close()
         logging.info("WebSocket connection closed.")
+        self._connected = False
 
     def attach_receiver(self, callback: Callable[[BR.BoseMessage], None]) -> int:
         """Attach a callback to receive unsolicited messages."""
@@ -225,6 +228,7 @@ class BoseSpeaker:
             try:
                 await self._websocket.send(json.dumps(message))
             except websockets.ConnectionClosed:
+                self._connected = False
                 if self._auto_reconnect:
                     logging.warning(
                         "WebSocket connection is closed. Reconnecting before sending message."
@@ -295,6 +299,7 @@ class BoseSpeaker:
         try:
             while not self._stop_event.is_set():
                 message = await self._websocket.recv()
+                self._connected = True
                 logging.debug(f"Received message: {message}")
                 parsed_message: BR.BoseMessage = json.loads(message)
                 header: BR.BoseHeader = parsed_message.get("header", {})
@@ -652,6 +657,9 @@ class BoseSpeaker:
         """Retrieve the network status."""
         return BR.NetworkStatus(await self._request("/network/status", "GET"))
 
+    def is_connected(self) -> bool:
+        """Return True if the WebSocket is connected."""
+        return self._connected
 
 class BoseFunctionNotSupportedException(Exception):
     def __init__(self, message: str) -> None:
