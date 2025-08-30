@@ -661,6 +661,13 @@ class BoseSpeaker:
         """Return True if the WebSocket is connected."""
         return self._connected
 
+    async def set_chromecast(self, enable: bool = True) -> Dict[str, Any]:
+        """Enable Chromecast on the device (PUT /cast/setup)."""
+        body: Dict[str, Any] = {
+            "bosePersonID": self._bose_auth.getControlToken().get("bosePersonID")
+        }
+        return await self._request("/cast/setup" if enable else "/cast/teardown", "PUT", body)
+
 class BoseFunctionNotSupportedException(Exception):
     def __init__(self, message: str) -> None:
         self.message = message
