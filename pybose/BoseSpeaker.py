@@ -504,6 +504,7 @@ class BoseSpeaker:
             "treble",
             "center",
             "subwooferGain",
+            "surround",
             "height",
             "avSync",
         ]:
@@ -520,6 +521,7 @@ class BoseSpeaker:
             "treble",
             "center",
             "subwooferGain",
+            "surround",
             "height",
             "avSync",
         ]:
@@ -666,7 +668,10 @@ class BoseSpeaker:
         body: Dict[str, Any] = {
             "bosePersonID": self._bose_auth.getControlToken().get("bosePersonID")
         }
-        return await self._request("/cast/setup" if enable else "/cast/teardown", "PUT", body)
+        return await self._request(
+            "/cast/setup" if enable else "/cast/teardown", "PUT", body
+        )
+
 
 class BoseFunctionNotSupportedException(Exception):
     def __init__(self, message: str) -> None:
