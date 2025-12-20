@@ -17,116 +17,37 @@ import time
 import json
 import logging
 import jwt
+import hashlib
+import base64
+import secrets
+import re
 from typing import TypedDict, Optional, Dict, Any, cast
+from urllib.parse import urlparse, parse_qs
 
-from .GSSDK import GSRequest, SigUtils
 from .BoseCloudResponse import BoseApiProduct
 
 # --- API Types ---
 
 
-class SocializeSDKConfigResponseIds(TypedDict):
+class AzureADB2CTokenResponse(TypedDict):
     """
-    Represents the 'ids' portion of the response from the Socialize SDK Config endpoint.
+    Represents the response from Azure AD B2C token endpoint.
 
     Attributes:
-        gmid (str): The GMID value.
-        ucid (str): The UCID value.
+        access_token (str): The access token.
+        id_token (str): The ID token.
+        token_type (str): The token type.
+        expires_in (int): Token expiry time in seconds.
+        refresh_token (str): The refresh token.
+        scope (str): The token scope.
     """
 
-    gmid: str
-    ucid: str
-
-
-class SocializeSDKConfigResponse(TypedDict, total=False):
-    """
-    Represents the full response from the Socialize SDK Config endpoint.
-
-    Attributes:
-        appIds (Dict[str, Any]): Application IDs (optional).
-        callId (str): The call identifier.
-        errorCode (int): The error code, if any.
-        errorReportRules (list[Any]): Any error report rules.
-        ids (SocializeSDKConfigResponseIds): The GMID and UCID values.
-        permissions (Dict[str, list[str]]): Permissions by service.
-        statusCode (int): HTTP status code.
-        statusReason (str): HTTP status reason.
-        time (str): Timestamp of the response.
-    """
-
-    appIds: Dict[str, Any]
-    callId: str
-    errorCode: int
-    errorReportRules: list[Any]
-    ids: SocializeSDKConfigResponseIds
-    permissions: Dict[str, list[str]]
-    statusCode: int
-    statusReason: str
-    time: str
-
-
-class AccountsLoginResponseSessionInfo(TypedDict):
-    """
-    Represents session information from the accounts.login endpoint.
-
-    Attributes:
-        sessionToken (str): The session token.
-        sessionSecret (str): The secret used for signing requests.
-    """
-
-    sessionToken: str
-    sessionSecret: str
-
-
-class AccountsLoginResponseUserInfo(TypedDict):
-    """
-    Represents user information from the accounts.login endpoint.
-
-    Attributes:
-        UID (str): The unique user ID.
-        signatureTimestamp (str): Timestamp of the signature.
-        UIDSignature (str): The UID signature.
-    """
-
-    UID: str
-    signatureTimestamp: str
-    UIDSignature: str
-
-
-class AccountsLoginResponse(TypedDict):
-    """
-    Represents the complete response from the accounts.login endpoint.
-
-    Attributes:
-        sessionInfo (AccountsLoginResponseSessionInfo): Session info.
-        userInfo (AccountsLoginResponseUserInfo): User info.
-    """
-
-    sessionInfo: AccountsLoginResponseSessionInfo
-    userInfo: AccountsLoginResponseUserInfo
-
-
-class AccountsGetJWTResponse(TypedDict):
-    """
-    Represents the response from the accounts.getJWT endpoint.
-
-    Attributes:
-        apiVersion (int): The API version.
-        callId (str): The call identifier.
-        errorCode (int): The error code.
-        id_token (str): The JWT token.
-        statusCode (int): The HTTP status code.
-        statusReason (str): The HTTP status reason.
-        time (str): The time of the response.
-    """
-
-    apiVersion: int
-    callId: str
-    errorCode: int
+    access_token: str
     id_token: str
-    statusCode: int
-    statusReason: str
-    time: str
+    token_type: str
+    expires_in: int
+    refresh_token: str
+    scope: str
 
 
 class IDJwtCoreTokenResponse(TypedDict):
@@ -205,25 +126,6 @@ class ControlToken(TypedDict):
 RawControlToken = IDJwtCoreTokenResponse
 
 
-class LoginResponse(TypedDict):
-    """
-    Represents an internal structure for login responses.
-
-    Attributes:
-        session_token (str): The session token.
-        session_secret (str): The session secret.
-        uid (str): The user ID.
-        signatureTimestamp (str): Timestamp for the signature.
-        UIDSignature (str): The UID signature.
-    """
-
-    session_token: str
-    session_secret: str
-    uid: str
-    signatureTimestamp: str
-    UIDSignature: str
-
-
 # --- BoseAuth Class ---
 
 
@@ -231,20 +133,14 @@ class BoseAuth:
     """
     A class to interact with the BOSE online API for obtaining control tokens.
 
-    This class uses publicly available API keys to obtain a JWT control token, which is used
+    This class uses Azure AD B2C authentication to obtain a JWT control token, which is used
     to control a local Bose speaker. It also provides methods to refresh tokens and to fetch
     product information from the BOSE API.
 
     Attributes:
-        GIGYA_API_KEY (str): Public API key for Gigya.
-        GIGYA_UA (str): User-Agent string used for Gigya requests.
         BOSE_API_KEY (str): Public API key for the BOSE API.
     """
 
-    GIGYA_API_KEY: str = (
-        "3_7PoVX7ELjlWyppFZFGia1Wf1rNGZv_mqVgtqVmYl3Js-hQxZiFIU8uHxd8G6PyNz"
-    )
-    GIGYA_UA: str = "Bose/32768 MySSID/1568.300.101 Darwin/24.2.0"
     BOSE_API_KEY: str = "67616C617061676F732D70726F642D6D61647269642D696F73"
 
     def __init__(self) -> None:
@@ -254,11 +150,13 @@ class BoseAuth:
         The control token, email, and password are initially unset.
         """
         self._control_token: Optional[RawControlToken] = None
+        self._azure_refresh_token: Optional[str] = None
         self._email: Optional[str] = None
         self._password: Optional[str] = None
+        self._session: requests.Session = requests.Session()
 
     def set_access_token(
-        self, access_token: str, refresh_token: str, bose_person_id
+        self, access_token: str, refresh_token: str, bose_person_id: str
     ) -> None:
         """
         Set the access token and refresh token.
@@ -266,175 +164,311 @@ class BoseAuth:
         Args:
             access_token (str): The access token.
             refresh_token (str): The refresh token.
+            bose_person_id (str): The Bose person ID.
         """
-        self._control_token = {
+        self._control_token = cast(RawControlToken, {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "bosePersonID": bose_person_id,
-        }
+            "expires_in": 0,
+            "scope": "",
+            "token_type": "Bearer"
+        })
 
-    def _get_ids(self) -> Optional[Dict[str, str]]:
-        """
-        Start a session and retrieve the GMID and UCID via the Socialize SDK Config endpoint.
+    def _generate_pkce(self) -> tuple[str, str]:
+        """Generate PKCE code verifier and challenge"""
+        code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8')
+        code_verifier = code_verifier.replace('=', '')
+        
+        code_challenge = hashlib.sha256(code_verifier.encode('utf-8')).digest()
+        code_challenge = base64.urlsafe_b64encode(code_challenge).decode('utf-8')
+        code_challenge = code_challenge.replace('=', '')
+        
+        return code_verifier, code_challenge
 
-        Returns:
-            Optional[Dict[str, str]]: A dictionary with 'gmid' and 'ucid' keys if successful; otherwise, None.
-        """
-        logging.debug("Getting GMID and UCID")
-        url: str = "https://socialize.us1.gigya.com/socialize.getSDKConfig"
-        data: Dict[str, Any] = {
-            "apikey": self.GIGYA_API_KEY,
-            "format": "json",
-            "httpStatusCodes": False,
-            "include": "permissions,ids,appIds",
-            "sdk": "ios_swift_1.0.8",
-            "targetEnv": "mobile",
-        }
-        try:
-            response_json: Dict[str, Any] = requests.post(url, data=data).json()
-            config: SocializeSDKConfigResponse = cast(
-                SocializeSDKConfigResponse, response_json
-            )
-        except Exception as e:
-            logging.error(f"Error getting GMID and UCID: {e}")
-            return None
-
-        logging.debug(f"_get_ids: {json.dumps(config, indent=4)}")
-        ids = config.get("ids")
-        if ids and "gmid" in ids and "ucid" in ids:
-            return {"gmid": ids["gmid"], "ucid": ids["ucid"]}
+    def _extract_csrf_token(self, html_content: str) -> Optional[str]:
+        """Extract CSRF token from HTML response"""
+        patterns = [
+            r'x-ms-cpim-csrf["\s]*[:=]["\s]*([^";\s]+)',
+            r'"csrf"["\s]*:["\s]*"([^"]+)"',
+            r'csrf_token["\s]*[:=]["\s]*"?([^";\s]+)"?',
+            r'X-CSRF-TOKEN["\s]*[:=]["\s]*"?([^";\s]+)"?',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, html_content, re.IGNORECASE)
+            if match:
+                logging.debug(f"Found CSRF token with pattern: {pattern}")
+                return match.group(1)
+        
+        # Try to extract from cookies
+        for cookie in self._session.cookies:
+            if 'csrf' in cookie.name.lower():
+                logging.debug(f"Found CSRF token in cookie: {cookie.name}")
+                return cookie.value
+        
+        logging.debug("No CSRF token found")
         return None
 
-    def _login(self, email: str, password: str, gmid: str, ucid: str) -> LoginResponse:
+    def _extract_tx_param(self, url_or_html: str) -> Optional[str]:
+        """Extract tx parameter from URL or HTML"""
+        patterns = [
+            r'[?&]tx=([^&"\']+)',
+            r'"tx"["\s]*:["\s]*"([^"]+)"',
+            r'StateProperties=([^&"\']+)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url_or_html)
+            if match:
+                logging.debug(f"Found tx param with pattern: {pattern}")
+                return match.group(1)
+        
+        logging.debug("No tx parameter found")
+        return None
+
+    def _perform_azure_login(self, email: str, password: str) -> Optional[AzureADB2CTokenResponse]:
         """
-        Perform login to Gigya using the provided email and password.
+        Perform Azure AD B2C authentication flow.
 
         Args:
-            email (str): The user's email address.
-            password (str): The user's password.
-            gmid (str): The GMID retrieved from _get_ids.
-            ucid (str): The UCID retrieved from _get_ids.
+            email (str): User's email address.
+            password (str): User's password.
 
         Returns:
-            LoginResponse: A dictionary containing session token, session secret, UID, signature timestamp, and UID signature.
-
-        Raises:
-            ValueError: If the login fails.
+            Optional[AzureADB2CTokenResponse]: Azure AD B2C tokens if successful, None otherwise.
         """
-        logging.debug(f"Logging in with {email}, gmid {gmid}, ucid {ucid}")
-        url: str = "https://accounts.us1.gigya.com/accounts.login"
-        headers: Dict[str, str] = {
-            "Host": "accounts.us1.gigya.com",
-            "Connection": "keep-alive",
-            "Accept": "*/*",
-            "User-Agent": self.GIGYA_UA,
-            "Accept-Language": "de-DE,de;q=0.9",
-            "Content-Type": "application/x-www-form-urlencoded",
+        # Clear session cookies to ensure clean state for new login
+        self._session.cookies.clear()
+        
+        # Configuration - using mobile app flow for Bose API compatibility
+        base_url = "https://myboseid.bose.com"
+        tenant = "boseprodb2c.onmicrosoft.com"
+        policy = "B2C_1A_MBI_SUSI"
+        client_id = "e284648d-3009-47eb-8e74-670c5330ae54"
+        redirect_uri = "bosemusic://auth/callback"
+        scope = f"openid email profile offline_access {client_id}"
+        
+        # Generate PKCE
+        code_verifier, code_challenge = self._generate_pkce()
+        
+        logging.debug("Starting Azure AD B2C authentication flow")
+        
+        # Step 1: Initial authorization request
+        auth_params = {
+            'p': policy,
+            'response_type': 'code',
+            'client_id': client_id,
+            'scope': scope,
+            'code_challenge_method': 'S256',
+            'code_challenge': code_challenge,
+            'redirect_uri': redirect_uri,
+            'ui_locales': 'de-de'
         }
-        data: Dict[str, Any] = {
-            "apikey": self.GIGYA_API_KEY,
-            "format": "json",
-            "gmid": gmid,
-            "httpStatusCodes": "false",
-            "include": "profile,data,emails,subscriptions,preferences,",
-            "includeUserInfo": "true",
-            "lang": "de",
-            "loginID": email,
-            "loginMode": "standard",
-            "password": password,
-            "sdk": "ios_swift_1.0.8",
-            "sessionExpiration": "0",
-            "source": "showScreenSet",
-            "targetEnv": "mobile",
-            "ucid": ucid,
-        }
-        response_obj: requests.Response = requests.post(url, headers=headers, data=data)
-        if response_obj.status_code == 200:
-            json_response: Dict[str, Any] = response_obj.json()
-            logging.debug(
-                "WARNING! CONFIDENTIAL INFORMATION! REMOVE AT LEAST THE session_secret AND UIDSignature FROM THE LOGS!"
-            )
-            logging.debug(f"_login: {json.dumps(json_response, indent=4)}")
-            logging.debug("END OF CONFIDENTIAL INFORMATION!")
-            login_resp: AccountsLoginResponse = cast(
-                AccountsLoginResponse, json_response
-            )
-            return {
-                "session_token": login_resp["sessionInfo"]["sessionToken"],
-                "session_secret": login_resp["sessionInfo"]["sessionSecret"],
-                "uid": login_resp["userInfo"]["UID"],
-                "signatureTimestamp": login_resp["userInfo"]["signatureTimestamp"],
-                "UIDSignature": login_resp["userInfo"]["UIDSignature"],
-            }
-        else:
-            raise ValueError(f"Login failed: {response_obj.text}")
-
-    def _get_jwt(self, user: LoginResponse, gmid: str, ucid: str) -> Optional[str]:
-        """
-        Retrieve a JWT token from Gigya using the accounts.getJWT endpoint.
-
-        Args:
-            user (LoginResponse): The login response obtained from _login.
-            gmid (str): The GMID value.
-            ucid (str): The UCID value.
-
-        Returns:
-            Optional[str]: The JWT token if successful; otherwise, None.
-        """
-        url: str = "https://accounts.us1.gigya.com/accounts.getJWT"
-        headers: Dict[str, str] = {
-            "Host": "accounts.us1.gigya.com",
-            "Connection": "keep-alive",
-            "Accept": "*/*",
-            "User-Agent": self.GIGYA_UA,
-            "Accept-Language": "de-DE,de;q=0.9",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-        timestamp: str = str(int(time.time()))
-        params: Dict[str, Any] = {
-            "apikey": self.GIGYA_API_KEY,
-            "format": "json",
-            "gmid": gmid,
-            "httpStatusCodes": "false",
-            "nonce": f"{timestamp}_1637928129",
-            "oauth_token": user["session_token"],
-            "sdk": "ios_swift_1.0.8",
-            "targetEnv": "mobile",
-            "timestamp": timestamp,
-            "ucid": ucid,
-        }
-
-        request = GSRequest()
-        base_string: str = request.calcOAuth1BaseString("POST", url, True, params)
-        sig: str = SigUtils.calcSignature(base_string, user["session_secret"])
-        params["sig"] = sig
-
+        
+        auth_url = f"{base_url}/{tenant}/oauth2/v2.0/authorize"
+        
         try:
-            logging.debug("WAARNING! CONFIDENTIAL INFORMATION!")
-            response_json: Dict[str, Any] = requests.post(
-                url, headers=headers, data=params
-            ).json()
-            jwt_resp: AccountsGetJWTResponse = cast(
-                AccountsGetJWTResponse, response_json
-            )
-            logging.debug(f"_get_jwt: {json.dumps(jwt_resp, indent=4)}")
-            logging.debug("END OF CONFIDENTIAL INFORMATION!")
+            response = self._session.get(auth_url, params=auth_params, allow_redirects=True)
+            
+            if response.status_code != 200:
+                logging.error(f"Authorization request failed: {response.status_code}")
+                return None
+            
+            # Extract CSRF token and tx parameter
+            csrf_token = self._extract_csrf_token(response.text)
+            tx_param = self._extract_tx_param(response.text) or self._extract_tx_param(response.url)
+            
+            if not csrf_token or not tx_param:
+                logging.error("Failed to extract CSRF token or tx parameter")
+                return None
+            
+            logging.debug(f"CSRF Token: {csrf_token[:50]}...")
+            logging.debug(f"TX Parameter: {tx_param[:50]}...")
+            
+            # Step 2: Submit email
+            email_url = f"{base_url}/{tenant}/{policy}/SelfAsserted"
+            email_params = {'tx': tx_param, 'p': policy}
+            email_data = {'request_type': 'RESPONSE', 'email': email}
+            email_headers = {
+                'X-CSRF-TOKEN': csrf_token,
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'Origin': base_url,
+                'Referer': response.url
+            }
+            
+            response = self._session.post(email_url, params=email_params, data=email_data, headers=email_headers)
+            
+            if response.status_code != 200:
+                logging.error(f"Email submission failed: {response.status_code}")
+                return None
+            
+            logging.debug("Email submitted successfully")
+            
+            # Step 3: Confirm email page
+            confirm_url = f"{base_url}/{tenant}/{policy}/api/CombinedSigninAndSignup/confirmed"
+            confirm_params = {
+                'rememberMe': 'false',
+                'csrf_token': csrf_token,
+                'tx': tx_param,
+                'p': policy,
+                'diags': json.dumps({"pageViewId": "test", "pageId": "CombinedSigninAndSignup", "trace": []})
+            }
+            
+            response = self._session.get(confirm_url, params=confirm_params)
+            
+            if response.status_code != 200:
+                logging.error(f"Confirmation page failed: {response.status_code}")
+                return None
+            
+            # Extract updated CSRF token
+            csrf_token = self._extract_csrf_token(response.text) or csrf_token
+            tx_param = self._extract_tx_param(response.text) or tx_param
+            
+            # Step 4: Submit password
+            password_url = f"{base_url}/{tenant}/{policy}/SelfAsserted"
+            password_params = {'tx': tx_param, 'p': policy}
+            password_data = {
+                'readonlyEmail': email,
+                'password': password,
+                'request_type': 'RESPONSE'
+            }
+            password_headers = {
+                'X-CSRF-TOKEN': csrf_token,
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'Origin': base_url,
+                'Referer': response.url
+            }
+            
+            response = self._session.post(password_url, params=password_params, data=password_data, headers=password_headers)
+            
+            if response.status_code != 200:
+                logging.error(f"Password submission failed: {response.status_code}")
+                return None
+            
+            logging.debug("Password submitted successfully")
+            
+            # Step 5: Confirm password page (this should redirect with authorization code)
+            confirm2_url = f"{base_url}/{tenant}/{policy}/api/SelfAsserted/confirmed"
+            confirm2_params = {
+                'csrf_token': csrf_token,
+                'tx': tx_param,
+                'p': policy,
+                'diags': json.dumps({"pageViewId": "test2", "pageId": "SelfAsserted", "trace": []})
+            }
+            
+            response = self._session.get(confirm2_url, params=confirm2_params, allow_redirects=False)
+            
+            # Extract authorization code from redirect
+            if response.status_code == 302:
+                location = response.headers.get('Location', '')
+                parsed = urlparse(location)
+                query_params = parse_qs(parsed.query)
+                auth_code = query_params.get('code', [None])[0]
+                
+                if not auth_code:
+                    logging.error("No authorization code in redirect")
+                    return None
+                
+                logging.debug(f"Authorization code received: {auth_code[:50]}...")
+            else:
+                logging.error(f"Expected redirect, got: {response.status_code}")
+                return None
+            
+            # Step 6: Exchange code for tokens
+            token_url = f"{base_url}/{tenant}/oauth2/v2.0/token"
+            token_params = {'p': policy}
+            token_data = {
+                'client_id': client_id,
+                'code_verifier': code_verifier,
+                'grant_type': 'authorization_code',
+                'scope': scope,
+                'redirect_uri': redirect_uri,
+                'code': auth_code
+            }
+            token_headers = {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Origin': 'https://www.bose.de',
+                'Referer': 'https://www.bose.de/'
+            }
+            
+            response = self._session.post(token_url, params=token_params, data=token_data, headers=token_headers, allow_redirects=False)
+            
+            if response.status_code != 200:
+                logging.error(f"Token exchange failed: {response.status_code}")
+                logging.error(f"Response: {response.text}")
+                return None
+            
+            tokens: AzureADB2CTokenResponse = cast(AzureADB2CTokenResponse, response.json())
+            logging.debug("Azure AD B2C authentication successful")
+            return tokens
+            
         except Exception as e:
-            logging.error(f"Error getting JWT: {e}")
+            logging.error(f"Error during Azure AD B2C authentication: {e}")
             return None
-        return jwt_resp.get("id_token")
+
+    def _exchange_id_token_for_bose_tokens(self, id_token: str) -> Optional[RawControlToken]:
+        """
+        Exchange Azure AD B2C id_token for Bose internal tokens.
+
+        Args:
+            id_token (str): The Azure AD B2C id_token.
+
+        Returns:
+            Optional[RawControlToken]: The Bose internal tokens if successful, None otherwise.
+        """
+        bose_api_url = "https://id.api.bose.io/id-jwt-core/idps/aad/B2C_1A_MBI_SUSI/token"
+        bose_client_id = "e284648d-3009-47eb-8e74-670c5330ae54"
+        
+        bose_payload = {
+            "grant_type": "id_token",
+            "id_token": id_token,
+            "client_id": bose_client_id,
+            "scope": f"openid email profile offline_access {bose_client_id}"
+        }
+        
+        bose_headers = {
+            'Content-Type': 'application/json',
+            'X-ApiKey': self.BOSE_API_KEY,
+            'X-Api-Version': '1',
+            'X-Software-Version': '1',
+            'X-Library-Version': '1',
+            'User-Agent': 'Bose/37362 CFNetwork/3860.200.71 Darwin/25.1.0',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br'
+        }
+        
+        try:
+            response = self._session.post(bose_api_url, json=bose_payload, headers=bose_headers)
+            
+            if response.status_code not in [200, 201]:
+                logging.error(f"Bose token exchange failed: {response.status_code}")
+                logging.error(f"Response: {response.text}")
+                return None
+            
+            bose_tokens: IDJwtCoreTokenResponse = cast(IDJwtCoreTokenResponse, response.json())
+            logging.debug("Bose token exchange successful")
+            return bose_tokens
+            
+        except Exception as e:
+            logging.error(f"Error exchanging id_token for Bose tokens: {e}")
+            return None
 
     def do_token_refresh(
         self, access_token: Optional[str] = None, refresh_token: Optional[str] = None
     ) -> ControlToken:
         """
-        Refresh the control token using the id.api.bose.io endpoint.
+        Refresh the control token using the Azure AD B2C refresh flow.
 
         If access_token and refresh_token are not provided, the previously stored tokens are used.
+        Note: The refresh_token parameter is ignored as we use the stored Azure refresh token.
 
         Args:
-            access_token (Optional[str]): Existing access token.
-            refresh_token (Optional[str]): Existing refresh token.
+            access_token (Optional[str]): Existing access token (ignored, kept for compatibility).
+            refresh_token (Optional[str]): Existing refresh token (ignored, kept for compatibility).
 
         Returns:
             ControlToken: A dictionary containing the new access token, refresh token, and Bose person ID.
@@ -444,121 +478,92 @@ class BoseAuth:
         """
         if self._control_token is None:
             raise ValueError("No control token stored to refresh.")
-        if access_token is None:
-            access_token = self._control_token.get("access_token")
-        if refresh_token is None:
-            refresh_token = self._control_token.get("refresh_token")
+        
+        if self._azure_refresh_token is None:
+            raise ValueError("No Azure refresh token available. Please login again.")
 
-        if access_token is None or refresh_token is None:
-            raise ValueError(
-                "Provide both the access_token and refresh_token or the control token",
-                access_token,
-                refresh_token,
-            )
-
-        fetched: Optional[RawControlToken] = self._fetch_keys(
-            access_token=access_token, refresh_token=refresh_token
-        )
-        if fetched is None:
-            raise ValueError("Failed to refresh token")
-        self._control_token.update(fetched)
+        # First, refresh Azure AD B2C tokens using the stored Azure refresh token
+        azure_tokens = self._refresh_azure_tokens(self._azure_refresh_token)
+        if azure_tokens is None:
+            raise ValueError("Failed to refresh Azure AD B2C tokens")
+        
+        # Update stored Azure refresh token
+        self._azure_refresh_token = azure_tokens.get("refresh_token")
+        
+        # Then exchange the new id_token for Bose tokens
+        bose_tokens = self._exchange_id_token_for_bose_tokens(azure_tokens["id_token"])
+        if bose_tokens is None:
+            raise ValueError("Failed to exchange id_token for Bose tokens after refresh")
+        
+        self._control_token = bose_tokens
         return {
-            "access_token": self._control_token.get("access_token"),
-            "refresh_token": self._control_token.get("refresh_token"),
-            "bose_person_id": self._control_token.get("bosePersonID", ""),
+            "access_token": bose_tokens.get("access_token", ""),
+            "refresh_token": bose_tokens.get("refresh_token", ""),
+            "bose_person_id": bose_tokens.get("bosePersonID", ""),
         }
 
-    def _fetch_keys(
-        self,
-        gigya_jwt: Optional[str] = None,
-        signature_timestamp: Optional[str] = None,
-        uid: Optional[str] = None,
-        uid_signature: Optional[str] = None,
-        access_token: Optional[str] = None,
-        refresh_token: Optional[str] = None,
-    ) -> Optional[RawControlToken]:
+    def _refresh_azure_tokens(self, refresh_token: str) -> Optional[AzureADB2CTokenResponse]:
         """
-        Fetch the local control token from the id.api.bose.io endpoint.
-
-        Either provide:
-            - gigya_jwt, signature_timestamp, uid, and uid_signature, or
-            - access_token and refresh_token.
+        Refresh Azure AD B2C tokens using a refresh token.
 
         Args:
-            gigya_jwt (Optional[str]): JWT token from Gigya.
-            signature_timestamp (Optional[str]): Signature timestamp.
-            uid (Optional[str]): User ID.
-            uid_signature (Optional[str]): UID signature.
-            access_token (Optional[str]): Existing access token.
-            refresh_token (Optional[str]): Existing refresh token.
+            refresh_token (str): The Azure AD B2C refresh token.
 
         Returns:
-            Optional[RawControlToken]: The fetched token if successful, otherwise None.
+            Optional[AzureADB2CTokenResponse]: The refreshed Azure tokens if successful, otherwise None.
         """
-        if (
-            gigya_jwt is None
-            or signature_timestamp is None
-            or uid is None
-            or uid_signature is None
-        ) and (access_token is None or refresh_token is None):
-            raise ValueError(
-                "Provide either the gigya_jwt, signature_timestamp, uid and uid_signature or the access_token and refresh_token"
-            )
-
-        url: str = "https://id.api.bose.io/id-jwt-core/token"
-        headers: Dict[str, str] = {
-            "X-ApiKey": self.BOSE_API_KEY,
-            "X-Software-Version": "10.6.6-32768",
-            "X-Api-Version": "1",
-            "User-Agent": "MadridApp/10.6.6 (com.bose.bosemusic; build:32768; iOS 18.3.0) Alamofire/5.6.2",
-            "Pragma": "no-cache",
-            "Cache-Control": "no-cache",
+        base_url = "https://myboseid.bose.com"
+        tenant = "boseprodb2c.onmicrosoft.com"
+        policy = "B2C_1A_MBI_SUSI"
+        client_id = "e284648d-3009-47eb-8e74-670c5330ae54"
+        
+        token_url = f"{base_url}/{tenant}/{policy}/oauth2/v2.0/token"
+        
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'User-Agent': 'Bose/37362 CFNetwork/3860.200.71 Darwin/25.1.0',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Pragma': 'no-cache',
+            'Cache-Control': 'no-cache'
+        }
+        
+        data = {
+            'refresh_token': refresh_token,
+            'client_id': client_id,
+            'grant_type': 'refresh_token'
         }
 
-        if access_token is not None and refresh_token is not None:
-            data: Dict[str, Any] = {
-                "scope": "openid",
-                "client_id": self.BOSE_API_KEY,
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-            }
-        else:
-            data = {
-                "id_token": gigya_jwt,
-                "scope": "openid",
-                "grant_type": "id_token",
-                "signature_timestamp": signature_timestamp,
-                "uid_signature": uid_signature,
-                "uid": uid,
-                "client_id": self.BOSE_API_KEY,
-            }
-
         try:
-            response_json: Dict[str, Any] = requests.post(
-                url, headers=headers, json=data
-            ).json()
-            logging.debug("WARNING! CONFIDENTIAL INFORMATION!")
-            logging.debug(f"_fetch_keys: {json.dumps(response_json, indent=4)}")
-            logging.debug("END OF CONFIDENTIAL INFORMATION!")
+            response = self._session.post(token_url, headers=headers, data=data)
+            if response.status_code != 200:
+                logging.error(f"Azure token refresh failed: {response.status_code}")
+                logging.error(f"Response: {response.text}")
+                return None
+            
+            response_json: Dict[str, Any] = response.json()
+            logging.debug("Azure AD B2C token refresh successful")
+            azure_tokens: AzureADB2CTokenResponse = cast(AzureADB2CTokenResponse, response_json)
+            return azure_tokens
         except Exception as e:
-            logging.error(f"Error fetching keys: {e}")
+            logging.error(f"Error refreshing Azure tokens: {e}")
             return None
-        token_resp: IDJwtCoreTokenResponse = cast(IDJwtCoreTokenResponse, response_json)
-        return token_resp
 
-    def get_token_validity_time(self, token: str = None) -> int:
+    def get_token_validity_time(self, token: Optional[str] = None) -> int:
         """
         Get the validity time of the given token.
 
         Args:
-            token (str): The JWT token to check.
+            token (Optional[str]): The JWT token to check.
 
         Returns:
             int: The time until the token expires in seconds.
         """
 
         if token is None:
-            token = self._control_token.get("access_token")
+            if self._control_token:
+                token = self._control_token.get("access_token")
         if token is None:
             return 0
 
@@ -572,19 +577,20 @@ class BoseAuth:
             logging.error(f"Error decoding token: {e}")
             return 0
 
-    def is_token_valid(self, token: str = None) -> bool:
+    def is_token_valid(self, token: Optional[str] = None) -> bool:
         """
         Check if the given token is still valid by decoding it without verifying the signature.
 
         Args:
-            token (str): The JWT token to validate.
+            token (Optional[str]): The JWT token to validate.
 
         Returns:
             bool: True if the token has not expired, False otherwise.
         """
 
         if token is None:
-            token = self._control_token.get("access_token")
+            if self._control_token:
+                token = self._control_token.get("access_token")
         if token is None:
             return False
 
@@ -594,9 +600,16 @@ class BoseAuth:
             )
             exp: int = decoded.get("exp", 0)
             valid: bool = exp > int(time.time())
-            if self._control_token is None:
-                self._control_token = {"access_token": token}
-            else:
+            if self._control_token is None and token:
+                self._control_token = cast(RawControlToken, {
+                    "access_token": token,
+                    "bosePersonID": "",
+                    "expires_in": 0,
+                    "refresh_token": "",
+                    "scope": "",
+                    "token_type": "Bearer"
+                })
+            elif self._control_token and token:
                 self._control_token["access_token"] = token
             return valid
         except Exception:
@@ -609,7 +622,13 @@ class BoseAuth:
         Returns:
             Optional[ControlToken]: The cached control token if available, otherwise None.
         """
-        return self._control_token
+        if self._control_token is None:
+            return None
+        return {
+            "access_token": self._control_token.get("access_token", ""),
+            "refresh_token": self._control_token.get("refresh_token", ""),
+            "bose_person_id": self._control_token.get("bosePersonID", ""),
+        }
 
     def getControlToken(
         self,
@@ -621,7 +640,7 @@ class BoseAuth:
         Obtain the control token for accessing the local speaker API.
 
         If a token is already stored and valid, it is returned (unless forceNew is True). Otherwise, the
-        token is retrieved by logging in and fetching keys from the Bose API.
+        token is retrieved by logging in via Azure AD B2C and exchanging for Bose tokens.
 
         Args:
             email (Optional[str]): User's email address.
@@ -637,9 +656,18 @@ class BoseAuth:
         if not forceNew and self._control_token is not None:
             access_token: Optional[str] = self._control_token.get("access_token")
             if access_token and self.is_token_valid():
-                return self._control_token
+                return {
+                    "access_token": self._control_token.get("access_token", ""),
+                    "refresh_token": self._control_token.get("refresh_token", ""),
+                    "bose_person_id": self._control_token.get("bosePersonID", ""),
+                }
             else:
                 logging.debug("Token is expired. Trying to refresh token")
+                # Try to refresh the token
+                try:
+                    return self.do_token_refresh()
+                except Exception as e:
+                    logging.debug(f"Token refresh failed: {e}. Will try full login.")
 
         if email is not None:
             self._email = email
@@ -649,27 +677,24 @@ class BoseAuth:
         if self._email is None or self._password is None:
             raise ValueError("Email and password are required for the first call!")
 
-        ids = self._get_ids()
-        if ids is None:
-            raise ValueError("Could not retrieve GMID and UCID")
-        gmid: str = ids["gmid"]
-        ucid: str = ids["ucid"]
+        # Perform Azure AD B2C login
+        azure_tokens = self._perform_azure_login(self._email, self._password)
+        if azure_tokens is None:
+            raise ValueError("Azure AD B2C login failed")
 
-        user: LoginResponse = self._login(self._email, self._password, gmid, ucid)
-        gigya_jwt: Optional[str] = self._get_jwt(user, gmid, ucid)
-        if gigya_jwt is None:
-            raise ValueError("Failed to retrieve Gigya JWT")
+        # Store Azure refresh token for later use
+        self._azure_refresh_token = azure_tokens.get("refresh_token")
 
-        fetched: Optional[RawControlToken] = self._fetch_keys(
-            gigya_jwt, user["signatureTimestamp"], user["uid"], user["UIDSignature"]
-        )
-        if fetched is None:
-            raise ValueError("Failed to fetch control token")
-        self._control_token = fetched
+        # Exchange id_token for Bose tokens
+        bose_tokens = self._exchange_id_token_for_bose_tokens(azure_tokens["id_token"])
+        if bose_tokens is None:
+            raise ValueError("Failed to exchange id_token for Bose tokens")
+        
+        self._control_token = bose_tokens
         return {
-            "access_token": self._control_token.get("access_token"),
-            "refresh_token": self._control_token.get("refresh_token", ""),
-            "bose_person_id": self._control_token.get("bosePersonID", ""),
+            "access_token": bose_tokens.get("access_token", ""),
+            "refresh_token": bose_tokens.get("refresh_token", ""),
+            "bose_person_id": bose_tokens.get("bosePersonID", ""),
         }
 
     def fetchProductInformation(self, gwid: str) -> Optional[BoseApiProduct]:
@@ -694,7 +719,7 @@ class BoseAuth:
             else "",
         }
         try:
-            response_json: Dict[str, Any] = requests.get(url, headers=headers).json()
+            response_json: Dict[str, Any] = self._session.get(url, headers=headers).json()
             logging.debug(f"product info: {json.dumps(response_json, indent=4)}")
         except Exception as e:
             logging.error(f"Error fetching product information: {e}")

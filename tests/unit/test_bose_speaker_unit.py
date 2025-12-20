@@ -1,5 +1,7 @@
 import asyncio
 import json
+import jwt
+import time
 import pytest
 from ssl import CERT_NONE
 from unittest.mock import patch
@@ -1067,3 +1069,147 @@ async def test_bluetooth_device_management():
     assert request_calls[0] == ("/bluetooth/sink/list", "GET", {})
     assert request_calls[1] == ("/bluetooth/sink/remove", "POST", {"mac": device_to_remove})
     assert request_calls[2] == ("/bluetooth/sink/list", "GET", {})
+
+@pytest.mark.asyncio
+async def test_connect_and_disconnect_success():
+    """Test websocket connect and disconnect with actual websocket"""
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="localhost", device_id="test_device")
+    
+    with patch('websockets.connect', new=fake_connect):
+        await bose.connect()
+        assert bose._websocket is not None
+        assert bose.is_connected() is True
+        
+        await bose.disconnect()
+        assert bose._websocket is None or bose._websocket.closed is True
+
+@pytest.mark.asyncio
+async def test_has_capability_true():
+    """Test has_capability when endpoint exists"""
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="localhost")
+    
+    # Set capabilities in the correct structure (note: has_capability looks for "group" key, not "groups")
+    bose._capabilities = {
+        "group": [
+            {
+                "endpoints": [
+                    {"endpoint": "/volume"},
+                    {"endpoint": "/power"}
+                ]
+            }
+        ]
+    }
+    
+    assert bose.has_capability("/volume") is True
+    assert bose.has_capability("/power") is True
+
+@pytest.mark.asyncio
+async def test_has_capability_false():
+    """Test has_capability when endpoint doesn't exist"""
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="localhost")
+    
+    bose._capabilities = {
+        "groups": [
+            {
+                "endpoints": [
+                    {"endpointId": "/volume"}
+                ]
+            }
+        ]
+    }
+    
+    assert bose.has_capability("/nonexistent") is False
+
+@pytest.mark.asyncio
+async def test_has_capability_no_capabilities():
+    """Test has_capability when capabilities not loaded"""
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="localhost")
+    
+    # Expect exception when capabilities not loaded
+    from pybose.BoseSpeaker import BoseCapabilitiesNotLoadedException
+    with pytest.raises(BoseCapabilitiesNotLoadedException):
+        bose.has_capability("/volume")
+
+@pytest.mark.asyncio
+async def test_set_audio_volume_muted():
+    """Test muting audio"""
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="localhost")
+    
+    async def fake_request(url, method, body=None):
+        return {"actual": 0, "muted": True}
+    
+    bose._request = fake_request  # type: ignore
+    result = await bose.set_audio_volume_muted(True)
+    assert result["muted"] is True
+
+@pytest.mark.asyncio
+async def test_control_transport():
+    """Test transport control private method"""
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="localhost")
+    
+    async def fake_request(url, method, body=None):
+        return {"status": "ok"}
+    
+    bose._request = fake_request  # type: ignore
+    result = await bose._control_transport("PLAY")
+    assert result["status"] == "ok"
+
+@pytest.mark.asyncio
+async def test_get_network_status():
+    """Test getting network status"""
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="localhost")
+    
+    async def fake_request(url, method, body=None):
+        return {"interfaces": [{"type": "WIFI", "state": "CONNECTED"}]}
+    
+    bose._request = fake_request  # type: ignore
+    result = await bose.get_network_status()
+    assert result["interfaces"][0]["type"] == "WIFI"
+
+@pytest.mark.asyncio
+async def test_set_audio_setting_invalid():
+    """Test setting invalid audio setting"""
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="localhost")
+    
+    bose._audio_settings = {
+        "bassCapabilities": {"available": ["0", "50", "100"]}
+    }
+    
+    with pytest.raises(BoseInvalidAudioSettingException):
+        await bose.set_audio_setting("bassCapabilities", "invalid_value")
+
+@pytest.mark.asyncio
+async def test_set_chromecast():
+    """Test setting chromecast source"""
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="localhost")
+    
+    # Mock getControlToken to return bosePersonID
+    def mock_get_control_token():
+        return {"bosePersonID": "person123", "access_token": "token", "refresh_token": "refresh"}
+    
+    auth.getControlToken = mock_get_control_token  # type: ignore
+    
+    async def fake_request(url, method, body=None):
+        return {"source": "CHROMECAST"}
+    
+    bose._request = fake_request  # type: ignore
+    result = await bose.set_chromecast()
+    assert result["source"] == "CHROMECAST"

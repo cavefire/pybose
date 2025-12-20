@@ -99,6 +99,45 @@ After attaching to the speaker, you can use the following functions:
 
 **Note:** The device supports more. But for now, these are the only functions implemented. Feel free to add more, or open an issue if you have a specific need.
 
+## Development
+
+### Running Tests
+
+This project includes both unit tests and integration tests.
+
+#### Unit Tests
+Unit tests mock external dependencies and can be run without credentials:
+
+```bash
+python -m pytest tests/unit/ -v
+```
+
+#### Integration Tests
+Integration tests require real Bose account credentials and test against actual Bose APIs. Set the following environment variables:
+
+```bash
+export BOSE_EMAIL="your_email@example.com"
+export BOSE_PASSWORD="your_password"
+export BOSE_GWID="your_device_gwid"  # Optional, for product information tests
+```
+
+Run integration tests:
+
+```bash
+# Run all integration tests
+python -m pytest tests/integration/ -v -m integration
+
+# Run specific integration test
+python -m pytest tests/integration/test_bose_auth_integration.py -v -m integration
+```
+
+#### Coverage Reports
+Generate coverage reports in XML and JSON format:
+
+```bash
+python -m pytest tests/unit/ --cov=pybose --cov-report=xml --cov-report=json --cov-report=term
+```
+
 ## Limitations
 * **Unofficial API:** The API is not officially supported by Bose and may break at any time.
 * **Token Lifetime:** The token has a limited lifetime and needs to be refreshed manually.
