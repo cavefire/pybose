@@ -166,24 +166,49 @@ class BoseAuth:
             refresh_token (str): The refresh token.
             bose_person_id (str): The Bose person ID.
         """
-        self._control_token = cast(RawControlToken, {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "bosePersonID": bose_person_id,
-            "expires_in": 0,
-            "scope": "",
-            "token_type": "Bearer"
-        })
+        self._control_token = cast(
+            RawControlToken,
+            {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "bosePersonID": bose_person_id,
+                "expires_in": 0,
+                "scope": "",
+                "token_type": "Bearer",
+            },
+        )
+
+    def set_azure_refresh_token(self, azure_refresh_token: str) -> None:
+        """
+        Set the Azure AD B2C refresh token.
+
+        This token is required for refreshing the Bose access tokens.
+
+        Args:
+            azure_refresh_token (str): The Azure AD B2C refresh token.
+        """
+        self._azure_refresh_token = azure_refresh_token
+
+    def get_azure_refresh_token(self) -> Optional[str]:
+        """
+        Get the Azure AD B2C refresh token.
+
+        Returns:
+            Optional[str]: The Azure AD B2C refresh token if available, otherwise None.
+        """
+        return self._azure_refresh_token
 
     def _generate_pkce(self) -> tuple[str, str]:
         """Generate PKCE code verifier and challenge"""
-        code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8')
-        code_verifier = code_verifier.replace('=', '')
-        
-        code_challenge = hashlib.sha256(code_verifier.encode('utf-8')).digest()
-        code_challenge = base64.urlsafe_b64encode(code_challenge).decode('utf-8')
-        code_challenge = code_challenge.replace('=', '')
-        
+        code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(
+            "utf-8"
+        )
+        code_verifier = code_verifier.replace("=", "")
+
+        code_challenge = hashlib.sha256(code_verifier.encode("utf-8")).digest()
+        code_challenge = base64.urlsafe_b64encode(code_challenge).decode("utf-8")
+        code_challenge = code_challenge.replace("=", "")
+
         return code_verifier, code_challenge
 
     def _extract_csrf_token(self, html_content: str) -> Optional[str]:
@@ -194,19 +219,19 @@ class BoseAuth:
             r'csrf_token["\s]*[:=]["\s]*"?([^";\s]+)"?',
             r'X-CSRF-TOKEN["\s]*[:=]["\s]*"?([^";\s]+)"?',
         ]
-        
+
         for pattern in patterns:
             match = re.search(pattern, html_content, re.IGNORECASE)
             if match:
                 logging.debug(f"Found CSRF token with pattern: {pattern}")
                 return match.group(1)
-        
+
         # Try to extract from cookies
         for cookie in self._session.cookies:
-            if 'csrf' in cookie.name.lower():
+            if "csrf" in cookie.name.lower():
                 logging.debug(f"Found CSRF token in cookie: {cookie.name}")
                 return cookie.value
-        
+
         logging.debug("No CSRF token found")
         return None
 
@@ -217,17 +242,19 @@ class BoseAuth:
             r'"tx"["\s]*:["\s]*"([^"]+)"',
             r'StateProperties=([^&"\']+)',
         ]
-        
+
         for pattern in patterns:
             match = re.search(pattern, url_or_html)
             if match:
                 logging.debug(f"Found tx param with pattern: {pattern}")
                 return match.group(1)
-        
+
         logging.debug("No tx parameter found")
         return None
 
-    def _perform_azure_login(self, email: str, password: str) -> Optional[AzureADB2CTokenResponse]:
+    def _perform_azure_login(
+        self, email: str, password: str
+    ) -> Optional[AzureADB2CTokenResponse]:
         """
         Perform Azure AD B2C authentication flow.
 
@@ -240,7 +267,7 @@ class BoseAuth:
         """
         # Clear session cookies to ensure clean state for new login
         self._session.cookies.clear()
-        
+
         # Configuration - using mobile app flow for Bose API compatibility
         base_url = "https://myboseid.bose.com"
         tenant = "boseprodb2c.onmicrosoft.com"
@@ -248,168 +275,201 @@ class BoseAuth:
         client_id = "e284648d-3009-47eb-8e74-670c5330ae54"
         redirect_uri = "bosemusic://auth/callback"
         scope = f"openid email profile offline_access {client_id}"
-        
+
         # Generate PKCE
         code_verifier, code_challenge = self._generate_pkce()
-        
+
         logging.debug("Starting Azure AD B2C authentication flow")
-        
+
         # Step 1: Initial authorization request
         auth_params = {
-            'p': policy,
-            'response_type': 'code',
-            'client_id': client_id,
-            'scope': scope,
-            'code_challenge_method': 'S256',
-            'code_challenge': code_challenge,
-            'redirect_uri': redirect_uri,
-            'ui_locales': 'de-de'
+            "p": policy,
+            "response_type": "code",
+            "client_id": client_id,
+            "scope": scope,
+            "code_challenge_method": "S256",
+            "code_challenge": code_challenge,
+            "redirect_uri": redirect_uri,
+            "ui_locales": "de-de",
         }
-        
+
         auth_url = f"{base_url}/{tenant}/oauth2/v2.0/authorize"
-        
+
         try:
-            response = self._session.get(auth_url, params=auth_params, allow_redirects=True)
-            
+            response = self._session.get(
+                auth_url, params=auth_params, allow_redirects=True
+            )
+
             if response.status_code != 200:
                 logging.error(f"Authorization request failed: {response.status_code}")
                 return None
-            
+
             # Extract CSRF token and tx parameter
             csrf_token = self._extract_csrf_token(response.text)
-            tx_param = self._extract_tx_param(response.text) or self._extract_tx_param(response.url)
-            
+            tx_param = self._extract_tx_param(response.text) or self._extract_tx_param(
+                response.url
+            )
+
             if not csrf_token or not tx_param:
                 logging.error("Failed to extract CSRF token or tx parameter")
                 return None
-            
+
             logging.debug(f"CSRF Token: {csrf_token[:50]}...")
             logging.debug(f"TX Parameter: {tx_param[:50]}...")
-            
+
             # Step 2: Submit email
             email_url = f"{base_url}/{tenant}/{policy}/SelfAsserted"
-            email_params = {'tx': tx_param, 'p': policy}
-            email_data = {'request_type': 'RESPONSE', 'email': email}
+            email_params = {"tx": tx_param, "p": policy}
+            email_data = {"request_type": "RESPONSE", "email": email}
             email_headers = {
-                'X-CSRF-TOKEN': csrf_token,
-                'X-Requested-With': 'XMLHttpRequest',
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'Origin': base_url,
-                'Referer': response.url
+                "X-CSRF-TOKEN": csrf_token,
+                "X-Requested-With": "XMLHttpRequest",
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "Origin": base_url,
+                "Referer": response.url,
             }
-            
-            response = self._session.post(email_url, params=email_params, data=email_data, headers=email_headers)
-            
+
+            response = self._session.post(
+                email_url, params=email_params, data=email_data, headers=email_headers
+            )
+
             if response.status_code != 200:
                 logging.error(f"Email submission failed: {response.status_code}")
                 return None
-            
+
             logging.debug("Email submitted successfully")
-            
+
             # Step 3: Confirm email page
-            confirm_url = f"{base_url}/{tenant}/{policy}/api/CombinedSigninAndSignup/confirmed"
+            confirm_url = (
+                f"{base_url}/{tenant}/{policy}/api/CombinedSigninAndSignup/confirmed"
+            )
             confirm_params = {
-                'rememberMe': 'false',
-                'csrf_token': csrf_token,
-                'tx': tx_param,
-                'p': policy,
-                'diags': json.dumps({"pageViewId": "test", "pageId": "CombinedSigninAndSignup", "trace": []})
+                "rememberMe": "false",
+                "csrf_token": csrf_token,
+                "tx": tx_param,
+                "p": policy,
+                "diags": json.dumps(
+                    {
+                        "pageViewId": "test",
+                        "pageId": "CombinedSigninAndSignup",
+                        "trace": [],
+                    }
+                ),
             }
-            
+
             response = self._session.get(confirm_url, params=confirm_params)
-            
+
             if response.status_code != 200:
                 logging.error(f"Confirmation page failed: {response.status_code}")
                 return None
-            
+
             # Extract updated CSRF token
             csrf_token = self._extract_csrf_token(response.text) or csrf_token
             tx_param = self._extract_tx_param(response.text) or tx_param
-            
+
             # Step 4: Submit password
             password_url = f"{base_url}/{tenant}/{policy}/SelfAsserted"
-            password_params = {'tx': tx_param, 'p': policy}
+            password_params = {"tx": tx_param, "p": policy}
             password_data = {
-                'readonlyEmail': email,
-                'password': password,
-                'request_type': 'RESPONSE'
+                "readonlyEmail": email,
+                "password": password,
+                "request_type": "RESPONSE",
             }
             password_headers = {
-                'X-CSRF-TOKEN': csrf_token,
-                'X-Requested-With': 'XMLHttpRequest',
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'Origin': base_url,
-                'Referer': response.url
+                "X-CSRF-TOKEN": csrf_token,
+                "X-Requested-With": "XMLHttpRequest",
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "Origin": base_url,
+                "Referer": response.url,
             }
-            
-            response = self._session.post(password_url, params=password_params, data=password_data, headers=password_headers)
-            
+
+            response = self._session.post(
+                password_url,
+                params=password_params,
+                data=password_data,
+                headers=password_headers,
+            )
+
             if response.status_code != 200:
                 logging.error(f"Password submission failed: {response.status_code}")
                 return None
-            
+
             logging.debug("Password submitted successfully")
-            
+
             # Step 5: Confirm password page (this should redirect with authorization code)
             confirm2_url = f"{base_url}/{tenant}/{policy}/api/SelfAsserted/confirmed"
             confirm2_params = {
-                'csrf_token': csrf_token,
-                'tx': tx_param,
-                'p': policy,
-                'diags': json.dumps({"pageViewId": "test2", "pageId": "SelfAsserted", "trace": []})
+                "csrf_token": csrf_token,
+                "tx": tx_param,
+                "p": policy,
+                "diags": json.dumps(
+                    {"pageViewId": "test2", "pageId": "SelfAsserted", "trace": []}
+                ),
             }
-            
-            response = self._session.get(confirm2_url, params=confirm2_params, allow_redirects=False)
-            
+
+            response = self._session.get(
+                confirm2_url, params=confirm2_params, allow_redirects=False
+            )
+
             # Extract authorization code from redirect
             if response.status_code == 302:
-                location = response.headers.get('Location', '')
+                location = response.headers.get("Location", "")
                 parsed = urlparse(location)
                 query_params = parse_qs(parsed.query)
-                auth_code = query_params.get('code', [None])[0]
-                
+                auth_code = query_params.get("code", [None])[0]
+
                 if not auth_code:
                     logging.error("No authorization code in redirect")
                     return None
-                
+
                 logging.debug(f"Authorization code received: {auth_code[:50]}...")
             else:
                 logging.error(f"Expected redirect, got: {response.status_code}")
                 return None
-            
+
             # Step 6: Exchange code for tokens
             token_url = f"{base_url}/{tenant}/oauth2/v2.0/token"
-            token_params = {'p': policy}
+            token_params = {"p": policy}
             token_data = {
-                'client_id': client_id,
-                'code_verifier': code_verifier,
-                'grant_type': 'authorization_code',
-                'scope': scope,
-                'redirect_uri': redirect_uri,
-                'code': auth_code
+                "client_id": client_id,
+                "code_verifier": code_verifier,
+                "grant_type": "authorization_code",
+                "scope": scope,
+                "redirect_uri": redirect_uri,
+                "code": auth_code,
             }
             token_headers = {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Origin': 'https://www.bose.de',
-                'Referer': 'https://www.bose.de/'
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Origin": "https://www.bose.de",
+                "Referer": "https://www.bose.de/",
             }
-            
-            response = self._session.post(token_url, params=token_params, data=token_data, headers=token_headers, allow_redirects=False)
-            
+
+            response = self._session.post(
+                token_url,
+                params=token_params,
+                data=token_data,
+                headers=token_headers,
+                allow_redirects=False,
+            )
+
             if response.status_code != 200:
                 logging.error(f"Token exchange failed: {response.status_code}")
                 logging.error(f"Response: {response.text}")
                 return None
-            
-            tokens: AzureADB2CTokenResponse = cast(AzureADB2CTokenResponse, response.json())
+
+            tokens: AzureADB2CTokenResponse = cast(
+                AzureADB2CTokenResponse, response.json()
+            )
             logging.debug("Azure AD B2C authentication successful")
             return tokens
-            
+
         except Exception as e:
             logging.error(f"Error during Azure AD B2C authentication: {e}")
             return None
 
-    def _exchange_id_token_for_bose_tokens(self, id_token: str) -> Optional[RawControlToken]:
+    def _exchange_id_token_for_bose_tokens(
+        self, id_token: str
+    ) -> Optional[RawControlToken]:
         """
         Exchange Azure AD B2C id_token for Bose internal tokens.
 
@@ -419,40 +479,46 @@ class BoseAuth:
         Returns:
             Optional[RawControlToken]: The Bose internal tokens if successful, None otherwise.
         """
-        bose_api_url = "https://id.api.bose.io/id-jwt-core/idps/aad/B2C_1A_MBI_SUSI/token"
+        bose_api_url = (
+            "https://id.api.bose.io/id-jwt-core/idps/aad/B2C_1A_MBI_SUSI/token"
+        )
         bose_client_id = "e284648d-3009-47eb-8e74-670c5330ae54"
-        
+
         bose_payload = {
             "grant_type": "id_token",
             "id_token": id_token,
             "client_id": bose_client_id,
-            "scope": f"openid email profile offline_access {bose_client_id}"
+            "scope": f"openid email profile offline_access {bose_client_id}",
         }
-        
+
         bose_headers = {
-            'Content-Type': 'application/json',
-            'X-ApiKey': self.BOSE_API_KEY,
-            'X-Api-Version': '1',
-            'X-Software-Version': '1',
-            'X-Library-Version': '1',
-            'User-Agent': 'Bose/37362 CFNetwork/3860.200.71 Darwin/25.1.0',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br'
+            "Content-Type": "application/json",
+            "X-ApiKey": self.BOSE_API_KEY,
+            "X-Api-Version": "1",
+            "X-Software-Version": "1",
+            "X-Library-Version": "1",
+            "User-Agent": "Bose/37362 CFNetwork/3860.200.71 Darwin/25.1.0",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
         }
-        
+
         try:
-            response = self._session.post(bose_api_url, json=bose_payload, headers=bose_headers)
-            
+            response = self._session.post(
+                bose_api_url, json=bose_payload, headers=bose_headers
+            )
+
             if response.status_code not in [200, 201]:
                 logging.error(f"Bose token exchange failed: {response.status_code}")
                 logging.error(f"Response: {response.text}")
                 return None
-            
-            bose_tokens: IDJwtCoreTokenResponse = cast(IDJwtCoreTokenResponse, response.json())
+
+            bose_tokens: IDJwtCoreTokenResponse = cast(
+                IDJwtCoreTokenResponse, response.json()
+            )
             logging.debug("Bose token exchange successful")
             return bose_tokens
-            
+
         except Exception as e:
             logging.error(f"Error exchanging id_token for Bose tokens: {e}")
             return None
@@ -478,7 +544,7 @@ class BoseAuth:
         """
         if self._control_token is None:
             raise ValueError("No control token stored to refresh.")
-        
+
         if self._azure_refresh_token is None:
             raise ValueError("No Azure refresh token available. Please login again.")
 
@@ -486,15 +552,17 @@ class BoseAuth:
         azure_tokens = self._refresh_azure_tokens(self._azure_refresh_token)
         if azure_tokens is None:
             raise ValueError("Failed to refresh Azure AD B2C tokens")
-        
+
         # Update stored Azure refresh token
         self._azure_refresh_token = azure_tokens.get("refresh_token")
-        
+
         # Then exchange the new id_token for Bose tokens
         bose_tokens = self._exchange_id_token_for_bose_tokens(azure_tokens["id_token"])
         if bose_tokens is None:
-            raise ValueError("Failed to exchange id_token for Bose tokens after refresh")
-        
+            raise ValueError(
+                "Failed to exchange id_token for Bose tokens after refresh"
+            )
+
         self._control_token = bose_tokens
         return {
             "access_token": bose_tokens.get("access_token", ""),
@@ -502,7 +570,9 @@ class BoseAuth:
             "bose_person_id": bose_tokens.get("bosePersonID", ""),
         }
 
-    def _refresh_azure_tokens(self, refresh_token: str) -> Optional[AzureADB2CTokenResponse]:
+    def _refresh_azure_tokens(
+        self, refresh_token: str
+    ) -> Optional[AzureADB2CTokenResponse]:
         """
         Refresh Azure AD B2C tokens using a refresh token.
 
@@ -516,23 +586,23 @@ class BoseAuth:
         tenant = "boseprodb2c.onmicrosoft.com"
         policy = "B2C_1A_MBI_SUSI"
         client_id = "e284648d-3009-47eb-8e74-670c5330ae54"
-        
+
         token_url = f"{base_url}/{tenant}/{policy}/oauth2/v2.0/token"
-        
+
         headers = {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'User-Agent': 'Bose/37362 CFNetwork/3860.200.71 Darwin/25.1.0',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Pragma': 'no-cache',
-            'Cache-Control': 'no-cache'
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "User-Agent": "Bose/37362 CFNetwork/3860.200.71 Darwin/25.1.0",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Pragma": "no-cache",
+            "Cache-Control": "no-cache",
         }
-        
+
         data = {
-            'refresh_token': refresh_token,
-            'client_id': client_id,
-            'grant_type': 'refresh_token'
+            "refresh_token": refresh_token,
+            "client_id": client_id,
+            "grant_type": "refresh_token",
         }
 
         try:
@@ -541,10 +611,12 @@ class BoseAuth:
                 logging.error(f"Azure token refresh failed: {response.status_code}")
                 logging.error(f"Response: {response.text}")
                 return None
-            
+
             response_json: Dict[str, Any] = response.json()
             logging.debug("Azure AD B2C token refresh successful")
-            azure_tokens: AzureADB2CTokenResponse = cast(AzureADB2CTokenResponse, response_json)
+            azure_tokens: AzureADB2CTokenResponse = cast(
+                AzureADB2CTokenResponse, response_json
+            )
             return azure_tokens
         except Exception as e:
             logging.error(f"Error refreshing Azure tokens: {e}")
@@ -601,14 +673,17 @@ class BoseAuth:
             exp: int = decoded.get("exp", 0)
             valid: bool = exp > int(time.time())
             if self._control_token is None and token:
-                self._control_token = cast(RawControlToken, {
-                    "access_token": token,
-                    "bosePersonID": "",
-                    "expires_in": 0,
-                    "refresh_token": "",
-                    "scope": "",
-                    "token_type": "Bearer"
-                })
+                self._control_token = cast(
+                    RawControlToken,
+                    {
+                        "access_token": token,
+                        "bosePersonID": "",
+                        "expires_in": 0,
+                        "refresh_token": "",
+                        "scope": "",
+                        "token_type": "Bearer",
+                    },
+                )
             elif self._control_token and token:
                 self._control_token["access_token"] = token
             return valid
@@ -689,7 +764,7 @@ class BoseAuth:
         bose_tokens = self._exchange_id_token_for_bose_tokens(azure_tokens["id_token"])
         if bose_tokens is None:
             raise ValueError("Failed to exchange id_token for Bose tokens")
-        
+
         self._control_token = bose_tokens
         return {
             "access_token": bose_tokens.get("access_token", ""),
@@ -719,7 +794,9 @@ class BoseAuth:
             else "",
         }
         try:
-            response_json: Dict[str, Any] = self._session.get(url, headers=headers).json()
+            response_json: Dict[str, Any] = self._session.get(
+                url, headers=headers
+            ).json()
             logging.debug(f"product info: {json.dumps(response_json, indent=4)}")
         except Exception as e:
             logging.error(f"Error fetching product information: {e}")
