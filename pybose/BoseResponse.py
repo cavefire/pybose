@@ -446,3 +446,17 @@ class BluetoothPairStatusEnum(enumerate):
 class BluetoothPairStatus(TypedDict):
     mac: str
     status: BluetoothPairStatusEnum
+
+
+# WiFi Status
+class WifiStateEnum(enumerate):
+    WIFI_STATION_CONNECTED = "WIFI_STATION_CONNECTED"
+    WIFI_STATION_DISCONNECTED = "WIFI_STATION_DISCONNECTED"
+
+
+class WifiStatus(TypedDict):
+    frequencyKhz: int
+    signalDbm: int
+    signalDbmLevel: str
+    ssid: str
+    state: WifiStateEnum

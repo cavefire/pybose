@@ -659,6 +659,10 @@ class BoseSpeaker:
         """Retrieve the network status."""
         return BR.NetworkStatus(await self._request("/network/status", "GET"))
 
+    async def get_wifi_status(self) -> BR.WifiStatus:
+        """Retrieve the WiFi status."""
+        return BR.WifiStatus(await self._request("/network/wifi/status", "GET"))
+
     def is_connected(self) -> bool:
         """Return True if the WebSocket is connected."""
         return self._connected
