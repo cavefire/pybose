@@ -117,6 +117,11 @@ DEFAULT_SUBSCRIBE_RESOURCES: List[str] = [
 JWT_NOT_BEFORE_RETRIES = 3
 JWT_NOT_BEFORE_RETRY_DELAY = 2
 
+# A speaker simply stays quiet about requests it cannot answer (offline, in
+# standby, or asked for a resource it does not implement), so every request
+# stops waiting for its response after this many seconds instead of forever.
+DEFAULT_REQUEST_TIMEOUT = 30
+
 
 class BoseSpeaker:
     def __init__(
@@ -127,8 +132,10 @@ class BoseSpeaker:
         auto_reconnect: bool = True,
         bose_auth: BoseAuth = None,
         on_exception: Optional[Callable[[Exception], None]] = None,
+        request_timeout: float = DEFAULT_REQUEST_TIMEOUT,
     ) -> None:
         self._device_id: Optional[str] = device_id
+        self._request_timeout: float = request_timeout
         self._host: str = host
         self._version: int = version
         self._websocket: Optional[websockets.connect] = None
@@ -195,6 +202,7 @@ class BoseSpeaker:
         waitForResponse: bool = True,
         version: Optional[int] = None,
         checkCapabilities: bool = True,
+        timeout: Optional[float] = None,
         _attempt: int = 0,
     ) -> Dict[str, Any]:
         """Send a request over the WebSocket and wait for the matching response."""
@@ -259,6 +267,10 @@ class BoseSpeaker:
         if not waitForResponse:
             return {}
 
+        if timeout is None:
+            timeout = self._request_timeout
+        deadline = asyncio.get_running_loop().time() + timeout
+
         while True:
             for response in self._responses:
                 resp_header = response.get("header", {})
@@ -319,6 +331,18 @@ class BoseSpeaker:
                             self._on_exception(ex)
                         raise ex
                     return response["body"] if not withHeaders else response
+            if asyncio.get_running_loop().time() >= deadline:
+                ex = BoseRequestException(
+                    method,
+                    resource,
+                    body,
+                    408,
+                    408,
+                    f"no response from the speaker within {timeout} seconds",
+                )
+                if self._on_exception:
+                    self._on_exception(ex)
+                raise ex
             await asyncio.sleep(0.1)
 
     async def _receiver_loop(self) -> None:

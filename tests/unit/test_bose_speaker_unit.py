@@ -1281,3 +1281,38 @@ async def test_set_chromecast():
     bose._request = fake_request  # type: ignore
     result = await bose.set_chromecast()
     assert result["source"] == "CHROMECAST"
+
+
+@pytest.mark.asyncio
+async def test_request_times_out_when_the_speaker_never_answers():
+    bose = _make_bose()
+
+    with pytest.raises(BoseRequestException) as excinfo:
+        await bose._request("/dummy/resource", "GET", timeout=0.2)
+    assert excinfo.value.http_status == 408
+    assert "no response" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_request_within_the_timeout_still_succeeds():
+    bose = _make_bose()
+    bose._responses.append({
+        "header": {"msgtype": "RESPONSE", "reqID": 1, "status": 200},
+        "body": {"result": "success"},
+    })
+
+    result = await bose._request("/dummy/resource", "GET", timeout=0.2)
+    assert result == {"result": "success"}
+
+
+@pytest.mark.asyncio
+async def test_request_timeout_can_be_set_on_the_speaker():
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device", request_timeout=0.2)
+    bose.has_capability = lambda endpoint: True
+    bose._websocket = FakeWebsocket()
+
+    with pytest.raises(BoseRequestException) as excinfo:
+        await bose._request("/dummy/resource", "GET")
+    assert excinfo.value.http_status == 408
