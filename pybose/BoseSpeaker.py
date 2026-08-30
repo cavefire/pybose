@@ -111,6 +111,13 @@ DEFAULT_SUBSCRIBE_RESOURCES: List[str] = [
 ]
 
 
+# A speaker whose clock runs slightly behind rejects a freshly issued token
+# with "JWT not before check failed" until its clock passes the token's nbf
+# claim, so such requests are retried for a few seconds before giving up.
+JWT_NOT_BEFORE_RETRIES = 3
+JWT_NOT_BEFORE_RETRY_DELAY = 2
+
+
 class BoseSpeaker:
     def __init__(
         self,
@@ -188,6 +195,7 @@ class BoseSpeaker:
         waitForResponse: bool = True,
         version: Optional[int] = None,
         checkCapabilities: bool = True,
+        _attempt: int = 0,
     ) -> Dict[str, Any]:
         """Send a request over the WebSocket and wait for the matching response."""
         if body is None:
@@ -280,6 +288,25 @@ class BoseSpeaker:
                                 "message": f"pybose could not determine the error, but status code is {status}",
                             },
                         )
+                        if (
+                            status == 401
+                            and _attempt < JWT_NOT_BEFORE_RETRIES
+                            and "not before" in str(error.get("message", "")).lower()
+                        ):
+                            logging.warning(
+                                f"Speaker rejected the token for '{method} {resource}' as not yet valid (clock skew), retrying in {JWT_NOT_BEFORE_RETRY_DELAY} seconds"
+                            )
+                            await asyncio.sleep(JWT_NOT_BEFORE_RETRY_DELAY)
+                            return await self._request(
+                                resource,
+                                method,
+                                body,
+                                withHeaders,
+                                waitForResponse,
+                                version,
+                                checkCapabilities,
+                                _attempt=_attempt + 1,
+                            )
                         ex = BoseRequestException(
                             method,
                             resource,
