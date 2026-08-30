@@ -116,6 +116,74 @@ async def test_request_error():
     with pytest.raises(BoseRequestException) as excinfo:
         await bose._request("/dummy/resource", "GET")
     assert "400" in str(excinfo.value)
+
+
+import importlib
+
+bose_speaker_module = importlib.import_module("pybose.BoseSpeaker")
+
+
+def _nbf_response(req_id):
+    return {
+        "header": {"msgtype": "RESPONSE", "reqID": req_id, "status": 401},
+        "error": {"code": 0, "message": "JWT not before check failed"},
+    }
+
+
+def _make_bose():
+    auth = BoseAuth()
+    auth.set_access_token("dummy_token", "dummy_refresh_token", "dummy_person_id")
+    bose = BoseSpeaker(bose_auth=auth, host="dummy_host", device_id="dummy_device")
+    bose._req_id = 1
+    bose.has_capability = lambda endpoint: True
+    bose._websocket = FakeWebsocket()
+    return bose
+
+
+@pytest.mark.asyncio
+async def test_request_retries_when_token_is_not_yet_valid(monkeypatch):
+    monkeypatch.setattr(bose_speaker_module, "JWT_NOT_BEFORE_RETRY_DELAY", 0)
+    bose = _make_bose()
+
+    # The speaker's clock is behind the fresh token's nbf claim at first, then catches up.
+    bose._responses.append(_nbf_response(1))
+    bose._responses.append({
+        "header": {"msgtype": "RESPONSE", "reqID": 2, "status": 200},
+        "body": {"result": "success"},
+    })
+
+    result = await bose._request("/dummy/resource", "GET")
+    assert result == {"result": "success"}
+
+
+@pytest.mark.asyncio
+async def test_request_gives_up_when_token_stays_not_yet_valid(monkeypatch):
+    monkeypatch.setattr(bose_speaker_module, "JWT_NOT_BEFORE_RETRY_DELAY", 0)
+    exceptions = []
+    bose = _make_bose()
+    bose._on_exception = exceptions.append
+
+    for req_id in range(1, 6):
+        bose._responses.append(_nbf_response(req_id))
+
+    with pytest.raises(BoseRequestException) as excinfo:
+        await bose._request("/dummy/resource", "GET")
+    assert "not before" in str(excinfo.value)
+    # Only the final failure reaches the exception callback.
+    assert len(exceptions) == 1
+
+
+@pytest.mark.asyncio
+async def test_request_does_not_retry_other_401_errors():
+    bose = _make_bose()
+    bose._responses.append({
+        "header": {"msgtype": "RESPONSE", "reqID": 1, "status": 401},
+        "error": {"code": 1, "message": "token expired"},
+    })
+
+    with pytest.raises(BoseRequestException) as excinfo:
+        await bose._request("/dummy/resource", "GET")
+    assert "token expired" in str(excinfo.value)
     
     
 # --- Testing connection and disconnection ---
