@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import jwt
 import time
 import pytest
@@ -171,6 +172,43 @@ async def test_request_gives_up_when_token_stays_not_yet_valid(monkeypatch):
     assert "not before" in str(excinfo.value)
     # Only the final failure reaches the exception callback.
     assert len(exceptions) == 1
+
+
+@pytest.mark.asyncio
+async def test_handled_not_before_retry_is_logged_at_debug(monkeypatch, caplog):
+    monkeypatch.setattr(bose_speaker_module, "JWT_NOT_BEFORE_RETRY_DELAY", 0)
+    bose = _make_bose()
+    bose._responses.append(_nbf_response(1))
+    bose._responses.append({
+        "header": {"msgtype": "RESPONSE", "reqID": 2, "status": 200},
+        "body": {"result": "success"},
+    })
+
+    with caplog.at_level(logging.DEBUG):
+        await bose._request("/dummy/resource", "GET")
+
+    retry_records = [r for r in caplog.records if "clock skew" in r.getMessage()]
+    assert len(retry_records) == 1
+    assert retry_records[0].name == "pybose.BoseSpeaker"
+    assert retry_records[0].levelno == logging.DEBUG
+    assert "'GET /dummy/resource'" in retry_records[0].getMessage()
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert not [r for r in caplog.records if r.name == "root"]
+
+
+@pytest.mark.asyncio
+async def test_exhausted_not_before_retries_still_raise(monkeypatch, caplog):
+    monkeypatch.setattr(bose_speaker_module, "JWT_NOT_BEFORE_RETRY_DELAY", 0)
+    bose = _make_bose()
+    for req_id in range(1, 6):
+        bose._responses.append(_nbf_response(req_id))
+
+    with caplog.at_level(logging.DEBUG), pytest.raises(BoseRequestException):
+        await bose._request("/dummy/resource", "GET")
+
+    retry_records = [r for r in caplog.records if "clock skew" in r.getMessage()]
+    assert len(retry_records) == bose_speaker_module.JWT_NOT_BEFORE_RETRIES
+    assert all(r.levelno == logging.DEBUG for r in retry_records)
 
 
 @pytest.mark.asyncio

@@ -26,6 +26,8 @@ from urllib.parse import urlparse, parse_qs
 
 from .BoseCloudResponse import BoseApiProduct
 
+_LOGGER = logging.getLogger(__name__)
+
 # --- API Types ---
 
 
@@ -223,16 +225,16 @@ class BoseAuth:
         for pattern in patterns:
             match = re.search(pattern, html_content, re.IGNORECASE)
             if match:
-                logging.debug(f"Found CSRF token with pattern: {pattern}")
+                _LOGGER.debug(f"Found CSRF token with pattern: {pattern}")
                 return match.group(1)
 
         # Try to extract from cookies
         for cookie in self._session.cookies:
             if "csrf" in cookie.name.lower():
-                logging.debug(f"Found CSRF token in cookie: {cookie.name}")
+                _LOGGER.debug(f"Found CSRF token in cookie: {cookie.name}")
                 return cookie.value
 
-        logging.debug("No CSRF token found")
+        _LOGGER.debug("No CSRF token found")
         return None
 
     def _extract_tx_param(self, url_or_html: str) -> Optional[str]:
@@ -246,10 +248,10 @@ class BoseAuth:
         for pattern in patterns:
             match = re.search(pattern, url_or_html)
             if match:
-                logging.debug(f"Found tx param with pattern: {pattern}")
+                _LOGGER.debug(f"Found tx param with pattern: {pattern}")
                 return match.group(1)
 
-        logging.debug("No tx parameter found")
+        _LOGGER.debug("No tx parameter found")
         return None
 
     def _perform_azure_login(
@@ -279,7 +281,7 @@ class BoseAuth:
         # Generate PKCE
         code_verifier, code_challenge = self._generate_pkce()
 
-        logging.debug("Starting Azure AD B2C authentication flow")
+        _LOGGER.debug("Starting Azure AD B2C authentication flow")
 
         # Step 1: Initial authorization request
         auth_params = {
@@ -301,7 +303,7 @@ class BoseAuth:
             )
 
             if response.status_code != 200:
-                logging.error(f"Authorization request failed: {response.status_code}")
+                _LOGGER.error(f"Authorization request failed: {response.status_code}")
                 return None
 
             # Extract CSRF token and tx parameter
@@ -311,11 +313,11 @@ class BoseAuth:
             )
 
             if not csrf_token or not tx_param:
-                logging.error("Failed to extract CSRF token or tx parameter")
+                _LOGGER.error("Failed to extract CSRF token or tx parameter")
                 return None
 
-            logging.debug(f"CSRF Token: {csrf_token[:50]}...")
-            logging.debug(f"TX Parameter: {tx_param[:50]}...")
+            _LOGGER.debug(f"CSRF Token: {csrf_token[:50]}...")
+            _LOGGER.debug(f"TX Parameter: {tx_param[:50]}...")
 
             # Step 2: Submit email
             email_url = f"{base_url}/{tenant}/{policy}/SelfAsserted"
@@ -334,10 +336,10 @@ class BoseAuth:
             )
 
             if response.status_code != 200:
-                logging.error(f"Email submission failed: {response.status_code}")
+                _LOGGER.error(f"Email submission failed: {response.status_code}")
                 return None
 
-            logging.debug("Email submitted successfully")
+            _LOGGER.debug("Email submitted successfully")
 
             # Step 3: Confirm email page
             confirm_url = (
@@ -360,7 +362,7 @@ class BoseAuth:
             response = self._session.get(confirm_url, params=confirm_params)
 
             if response.status_code != 200:
-                logging.error(f"Confirmation page failed: {response.status_code}")
+                _LOGGER.error(f"Confirmation page failed: {response.status_code}")
                 return None
 
             # Extract updated CSRF token
@@ -391,10 +393,10 @@ class BoseAuth:
             )
 
             if response.status_code != 200:
-                logging.error(f"Password submission failed: {response.status_code}")
+                _LOGGER.error(f"Password submission failed: {response.status_code}")
                 return None
 
-            logging.debug("Password submitted successfully")
+            _LOGGER.debug("Password submitted successfully")
 
             # Step 5: Confirm password page (this should redirect with authorization code)
             confirm2_url = f"{base_url}/{tenant}/{policy}/api/SelfAsserted/confirmed"
@@ -419,12 +421,12 @@ class BoseAuth:
                 auth_code = query_params.get("code", [None])[0]
 
                 if not auth_code:
-                    logging.error("No authorization code in redirect")
+                    _LOGGER.error("No authorization code in redirect")
                     return None
 
-                logging.debug(f"Authorization code received: {auth_code[:50]}...")
+                _LOGGER.debug(f"Authorization code received: {auth_code[:50]}...")
             else:
-                logging.error(f"Expected redirect, got: {response.status_code}")
+                _LOGGER.error(f"Expected redirect, got: {response.status_code}")
                 return None
 
             # Step 6: Exchange code for tokens
@@ -453,18 +455,18 @@ class BoseAuth:
             )
 
             if response.status_code != 200:
-                logging.error(f"Token exchange failed: {response.status_code}")
-                logging.error(f"Response: {response.text}")
+                _LOGGER.error(f"Token exchange failed: {response.status_code}")
+                _LOGGER.error(f"Response: {response.text}")
                 return None
 
             tokens: AzureADB2CTokenResponse = cast(
                 AzureADB2CTokenResponse, response.json()
             )
-            logging.debug("Azure AD B2C authentication successful")
+            _LOGGER.debug("Azure AD B2C authentication successful")
             return tokens
 
         except Exception as e:
-            logging.error(f"Error during Azure AD B2C authentication: {e}")
+            _LOGGER.error(f"Error during Azure AD B2C authentication: {e}")
             return None
 
     def _exchange_id_token_for_bose_tokens(
@@ -509,18 +511,18 @@ class BoseAuth:
             )
 
             if response.status_code not in [200, 201]:
-                logging.error(f"Bose token exchange failed: {response.status_code}")
-                logging.error(f"Response: {response.text}")
+                _LOGGER.error(f"Bose token exchange failed: {response.status_code}")
+                _LOGGER.error(f"Response: {response.text}")
                 return None
 
             bose_tokens: IDJwtCoreTokenResponse = cast(
                 IDJwtCoreTokenResponse, response.json()
             )
-            logging.debug("Bose token exchange successful")
+            _LOGGER.debug("Bose token exchange successful")
             return bose_tokens
 
         except Exception as e:
-            logging.error(f"Error exchanging id_token for Bose tokens: {e}")
+            _LOGGER.error(f"Error exchanging id_token for Bose tokens: {e}")
             return None
 
     def do_token_refresh(
@@ -608,18 +610,18 @@ class BoseAuth:
         try:
             response = self._session.post(token_url, headers=headers, data=data)
             if response.status_code != 200:
-                logging.error(f"Azure token refresh failed: {response.status_code}")
-                logging.error(f"Response: {response.text}")
+                _LOGGER.error(f"Azure token refresh failed: {response.status_code}")
+                _LOGGER.error(f"Response: {response.text}")
                 return None
 
             response_json: Dict[str, Any] = response.json()
-            logging.debug("Azure AD B2C token refresh successful")
+            _LOGGER.debug("Azure AD B2C token refresh successful")
             azure_tokens: AzureADB2CTokenResponse = cast(
                 AzureADB2CTokenResponse, response_json
             )
             return azure_tokens
         except Exception as e:
-            logging.error(f"Error refreshing Azure tokens: {e}")
+            _LOGGER.error(f"Error refreshing Azure tokens: {e}")
             return None
 
     def get_token_validity_time(self, token: Optional[str] = None) -> int:
@@ -646,7 +648,7 @@ class BoseAuth:
             exp: int = decoded.get("exp", 0)
             return exp - int(time.time())
         except Exception as e:
-            logging.error(f"Error decoding token: {e}")
+            _LOGGER.error(f"Error decoding token: {e}")
             return 0
 
     def is_token_valid(self, token: Optional[str] = None) -> bool:
@@ -737,12 +739,12 @@ class BoseAuth:
                     "bose_person_id": self._control_token.get("bosePersonID", ""),
                 }
             else:
-                logging.debug("Token is expired. Trying to refresh token")
+                _LOGGER.debug("Token is expired. Trying to refresh token")
                 # Try to refresh the token
                 try:
                     return self.do_token_refresh()
                 except Exception as e:
-                    logging.debug(f"Token refresh failed: {e}. Will try full login.")
+                    _LOGGER.debug(f"Token refresh failed: {e}. Will try full login.")
 
         if email is not None:
             self._email = email
@@ -797,9 +799,9 @@ class BoseAuth:
             response_json: Dict[str, Any] = self._session.get(
                 url, headers=headers
             ).json()
-            logging.debug(f"product info: {json.dumps(response_json, indent=4)}")
+            _LOGGER.debug(f"product info: {json.dumps(response_json, indent=4)}")
         except Exception as e:
-            logging.error(f"Error fetching product information: {e}")
+            _LOGGER.error(f"Error fetching product information: {e}")
             return None
         product_resp: UsersApiBoseProductResponse = cast(
             UsersApiBoseProductResponse, response_json
