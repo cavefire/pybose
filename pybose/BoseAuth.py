@@ -28,6 +28,30 @@ from .BoseCloudResponse import BoseApiProduct
 
 _LOGGER = logging.getLogger(__name__)
 
+
+class BoseAuthError(ValueError):
+    """Obtaining or refreshing Bose tokens failed.
+
+    Subclasses ValueError, which these failures were raised as before.
+    """
+
+
+class BoseAuthRejectedError(BoseAuthError):
+    """Bose rejected the credentials or refresh token; a new login is required."""
+
+
+class BoseAuthUnavailableError(BoseAuthError):
+    """The Bose login service could not be reached or failed; retry later."""
+
+
+def _auth_error_for_status(status_code: int, message: str) -> BoseAuthError:
+    """Return the error matching an unsuccessful login service response."""
+    # 400 (e.g. invalid_grant), 401 and 403 mean the token or credentials were
+    # refused. Everything else (429, 5xx, ...) is a problem on Bose's side.
+    if status_code in (400, 401, 403):
+        return BoseAuthRejectedError(message)
+    return BoseAuthUnavailableError(message)
+
 # --- API Types ---
 
 
@@ -469,9 +493,7 @@ class BoseAuth:
             _LOGGER.error(f"Error during Azure AD B2C authentication: {e}")
             return None
 
-    def _exchange_id_token_for_bose_tokens(
-        self, id_token: str
-    ) -> Optional[RawControlToken]:
+    def _exchange_id_token_for_bose_tokens(self, id_token: str) -> RawControlToken:
         """
         Exchange Azure AD B2C id_token for Bose internal tokens.
 
@@ -479,7 +501,11 @@ class BoseAuth:
             id_token (str): The Azure AD B2C id_token.
 
         Returns:
-            Optional[RawControlToken]: The Bose internal tokens if successful, None otherwise.
+            RawControlToken: The Bose internal tokens.
+
+        Raises:
+            BoseAuthRejectedError: If Bose rejected the id_token.
+            BoseAuthUnavailableError: If the Bose token service could not be reached or failed.
         """
         bose_api_url = (
             "https://id.api.bose.io/id-jwt-core/idps/aad/B2C_1A_MBI_SUSI/token"
@@ -509,21 +535,31 @@ class BoseAuth:
             response = self._session.post(
                 bose_api_url, json=bose_payload, headers=bose_headers
             )
+        except Exception as e:
+            _LOGGER.error(f"Error exchanging id_token for Bose tokens: {e}")
+            raise BoseAuthUnavailableError(
+                f"Failed to exchange id_token for Bose tokens: {e}"
+            ) from e
 
-            if response.status_code not in [200, 201]:
-                _LOGGER.error(f"Bose token exchange failed: {response.status_code}")
-                _LOGGER.error(f"Response: {response.text}")
-                return None
+        if response.status_code not in [200, 201]:
+            _LOGGER.error(f"Bose token exchange failed: {response.status_code}")
+            _LOGGER.error(f"Response: {response.text}")
+            raise _auth_error_for_status(
+                response.status_code,
+                f"Failed to exchange id_token for Bose tokens: HTTP {response.status_code}",
+            )
 
+        try:
             bose_tokens: IDJwtCoreTokenResponse = cast(
                 IDJwtCoreTokenResponse, response.json()
             )
-            _LOGGER.debug("Bose token exchange successful")
-            return bose_tokens
-
         except Exception as e:
             _LOGGER.error(f"Error exchanging id_token for Bose tokens: {e}")
-            return None
+            raise BoseAuthUnavailableError(
+                f"Failed to exchange id_token for Bose tokens: {e}"
+            ) from e
+        _LOGGER.debug("Bose token exchange successful")
+        return bose_tokens
 
     def do_token_refresh(
         self, access_token: Optional[str] = None, refresh_token: Optional[str] = None
@@ -542,28 +578,27 @@ class BoseAuth:
             ControlToken: A dictionary containing the new access token, refresh token, and Bose person ID.
 
         Raises:
-            ValueError: If no control token is stored or required tokens are missing.
+            BoseAuthRejectedError: If no tokens are stored or Bose rejected the refresh
+                token, so a new login is required.
+            BoseAuthUnavailableError: If the login service could not be reached or failed,
+                so the refresh can be retried later.
         """
         if self._control_token is None:
-            raise ValueError("No control token stored to refresh.")
+            raise BoseAuthRejectedError("No control token stored to refresh.")
 
         if self._azure_refresh_token is None:
-            raise ValueError("No Azure refresh token available. Please login again.")
+            raise BoseAuthRejectedError(
+                "No Azure refresh token available. Please login again."
+            )
 
         # First, refresh Azure AD B2C tokens using the stored Azure refresh token
         azure_tokens = self._refresh_azure_tokens(self._azure_refresh_token)
-        if azure_tokens is None:
-            raise ValueError("Failed to refresh Azure AD B2C tokens")
 
         # Update stored Azure refresh token
         self._azure_refresh_token = azure_tokens.get("refresh_token")
 
         # Then exchange the new id_token for Bose tokens
         bose_tokens = self._exchange_id_token_for_bose_tokens(azure_tokens["id_token"])
-        if bose_tokens is None:
-            raise ValueError(
-                "Failed to exchange id_token for Bose tokens after refresh"
-            )
 
         self._control_token = bose_tokens
         return {
@@ -572,9 +607,7 @@ class BoseAuth:
             "bose_person_id": bose_tokens.get("bosePersonID", ""),
         }
 
-    def _refresh_azure_tokens(
-        self, refresh_token: str
-    ) -> Optional[AzureADB2CTokenResponse]:
+    def _refresh_azure_tokens(self, refresh_token: str) -> AzureADB2CTokenResponse:
         """
         Refresh Azure AD B2C tokens using a refresh token.
 
@@ -582,7 +615,11 @@ class BoseAuth:
             refresh_token (str): The Azure AD B2C refresh token.
 
         Returns:
-            Optional[AzureADB2CTokenResponse]: The refreshed Azure tokens if successful, otherwise None.
+            AzureADB2CTokenResponse: The refreshed Azure tokens.
+
+        Raises:
+            BoseAuthRejectedError: If the refresh token was rejected (e.g. expired or revoked).
+            BoseAuthUnavailableError: If the login service could not be reached or failed.
         """
         base_url = "https://myboseid.bose.com"
         tenant = "boseprodb2c.onmicrosoft.com"
@@ -609,20 +646,32 @@ class BoseAuth:
 
         try:
             response = self._session.post(token_url, headers=headers, data=data)
-            if response.status_code != 200:
-                _LOGGER.error(f"Azure token refresh failed: {response.status_code}")
-                _LOGGER.error(f"Response: {response.text}")
-                return None
-
-            response_json: Dict[str, Any] = response.json()
-            _LOGGER.debug("Azure AD B2C token refresh successful")
-            azure_tokens: AzureADB2CTokenResponse = cast(
-                AzureADB2CTokenResponse, response_json
-            )
-            return azure_tokens
         except Exception as e:
             _LOGGER.error(f"Error refreshing Azure tokens: {e}")
-            return None
+            raise BoseAuthUnavailableError(
+                f"Failed to refresh Azure AD B2C tokens: {e}"
+            ) from e
+
+        if response.status_code != 200:
+            _LOGGER.error(f"Azure token refresh failed: {response.status_code}")
+            _LOGGER.error(f"Response: {response.text}")
+            raise _auth_error_for_status(
+                response.status_code,
+                f"Failed to refresh Azure AD B2C tokens: HTTP {response.status_code}",
+            )
+
+        try:
+            response_json: Dict[str, Any] = response.json()
+        except Exception as e:
+            _LOGGER.error(f"Error refreshing Azure tokens: {e}")
+            raise BoseAuthUnavailableError(
+                f"Failed to refresh Azure AD B2C tokens: {e}"
+            ) from e
+        _LOGGER.debug("Azure AD B2C token refresh successful")
+        azure_tokens: AzureADB2CTokenResponse = cast(
+            AzureADB2CTokenResponse, response_json
+        )
+        return azure_tokens
 
     def get_token_validity_time(self, token: Optional[str] = None) -> int:
         """
@@ -764,8 +813,6 @@ class BoseAuth:
 
         # Exchange id_token for Bose tokens
         bose_tokens = self._exchange_id_token_for_bose_tokens(azure_tokens["id_token"])
-        if bose_tokens is None:
-            raise ValueError("Failed to exchange id_token for Bose tokens")
 
         self._control_token = bose_tokens
         return {
