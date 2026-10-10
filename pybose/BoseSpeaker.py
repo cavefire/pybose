@@ -323,6 +323,7 @@ class BoseSpeaker:
                                 waitForResponse,
                                 version,
                                 checkCapabilities,
+                                timeout=timeout,
                                 _attempt=_attempt + 1,
                             )
                         ex = BoseRequestException(

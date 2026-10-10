@@ -1354,3 +1354,18 @@ async def test_request_timeout_can_be_set_on_the_speaker():
     with pytest.raises(BoseRequestException) as excinfo:
         await bose._request("/dummy/resource", "GET")
     assert excinfo.value.http_status == 408
+
+
+@pytest.mark.asyncio
+async def test_not_before_retry_keeps_the_request_timeout(monkeypatch):
+    monkeypatch.setattr(bose_speaker_module, "JWT_NOT_BEFORE_RETRY_DELAY", 0)
+    bose = _make_bose()
+    # The speaker rejects the token once and then never answers the retry.
+    bose._responses.append(_nbf_response(1))
+
+    with pytest.raises(BoseRequestException) as excinfo:
+        await asyncio.wait_for(
+            bose._request("/dummy/resource", "GET", timeout=0.2), timeout=5
+        )
+    assert excinfo.value.http_status == 408
+    assert "within 0.2 seconds" in str(excinfo.value)
