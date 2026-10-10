@@ -21,6 +21,8 @@ from pybose.BoseAuth import BoseAuth
 
 from . import BoseResponse as BR
 
+_LOGGER = logging.getLogger(__name__)
+
 # Default resources subscribed when connecting (same as in the BOSE app)
 DEFAULT_SUBSCRIBE_RESOURCES: List[str] = [
     "/bluetooth/sink/list",
@@ -163,11 +165,11 @@ class BoseSpeaker:
         self._websocket = await websockets.connect(
             self._url, subprotocols=[self._subprotocol], ssl=self._ssl_context
         )
-        logging.info("WebSocket connection established.")
+        _LOGGER.info("WebSocket connection established.")
         self._stop_event.clear()
         self._receiver_task = asyncio.create_task(self._receiver_loop())
         if self._subscribed_resources:
-            logging.debug("Subscribing to resources from previous session.")
+            _LOGGER.debug("Subscribing to resources from previous session.")
             await self.subscribe(self._subscribed_resources)
         await self.get_capabilities()
         self._connected = True
@@ -180,7 +182,7 @@ class BoseSpeaker:
             await self._receiver_task
         if self._websocket:
             await self._websocket.close()
-        logging.info("WebSocket connection closed.")
+        _LOGGER.info("WebSocket connection closed.")
         self._connected = False
 
     def attach_receiver(self, callback: Callable[[BR.BoseMessage], None]) -> int:
@@ -237,7 +239,7 @@ class BoseSpeaker:
 
         if self._device_id is None:
             await self._message_queue.put(message)
-            logging.debug(
+            _LOGGER.debug(
                 f"Waiting for deviceID. Queued message: {json.dumps(message, indent=4)}"
             )
         else:
@@ -246,13 +248,13 @@ class BoseSpeaker:
             except websockets.ConnectionClosed:
                 self._connected = False
                 if self._auto_reconnect:
-                    logging.warning(
+                    _LOGGER.warning(
                         "WebSocket connection is closed. Reconnecting before sending message."
                     )
                     await self.connect()
                     await self._websocket.send(json.dumps(message))
                 else:
-                    logging.error(
+                    _LOGGER.error(
                         "WebSocket connection is closed. Cannot send message."
                     )
                     ex = Exception(
@@ -262,7 +264,7 @@ class BoseSpeaker:
                         self._on_exception(ex)
                     raise ex
 
-            logging.debug(f"Sent message: {json.dumps(message, indent=4)}")
+            _LOGGER.debug(f"Sent message: {json.dumps(message, indent=4)}")
 
         if not waitForResponse:
             return {}
@@ -305,8 +307,12 @@ class BoseSpeaker:
                             and _attempt < JWT_NOT_BEFORE_RETRIES
                             and "not before" in str(error.get("message", "")).lower()
                         ):
-                            logging.warning(
-                                f"Speaker rejected the token for '{method} {resource}' as not yet valid (clock skew), retrying in {JWT_NOT_BEFORE_RETRY_DELAY} seconds"
+                            # Expected and handled; only the final failure is raised.
+                            _LOGGER.debug(
+                                "Speaker rejected the token for '%s %s' as not yet valid (clock skew), retrying in %s seconds",
+                                method,
+                                resource,
+                                JWT_NOT_BEFORE_RETRY_DELAY,
                             )
                             await asyncio.sleep(JWT_NOT_BEFORE_RETRY_DELAY)
                             return await self._request(
@@ -351,15 +357,15 @@ class BoseSpeaker:
             while not self._stop_event.is_set():
                 message = await self._websocket.recv()
                 self._connected = True
-                logging.debug(f"Received message: {message}")
+                _LOGGER.debug(f"Received message: {message}")
                 parsed_message: BR.BoseMessage = json.loads(message)
                 header: BR.BoseHeader = parsed_message.get("header", {})
                 if header.get("device") is not None and self._device_id is None:
                     self._device_id = header["device"]
-                    logging.debug(
+                    _LOGGER.debug(
                         f"Received first message from device. Device ID: {self._device_id}"
                     )
-                    logging.debug(
+                    _LOGGER.debug(
                         f"Sending {self._message_queue.qsize()} queued messages."
                     )
                     while not self._message_queue.empty():
@@ -370,21 +376,21 @@ class BoseSpeaker:
                     header.get("msgtype") == BR.BoseHeaderMsgTypeEnum.RESPONSE
                     and header.get("reqID") is not None
                 ):
-                    logging.debug(f"Response received for reqID: {header['reqID']}")
+                    _LOGGER.debug(f"Response received for reqID: {header['reqID']}")
                     self._responses.append(parsed_message)
                 else:
                     for receiver in self._receivers.values():
                         receiver(parsed_message)
         except websockets.ConnectionClosed:
-            logging.warning("WebSocket connection lost.")
+            _LOGGER.warning("WebSocket connection lost.")
             if self._auto_reconnect:
-                logging.info("Reconnecting...")
+                _LOGGER.info("Reconnecting...")
                 asyncio.create_task(self.connect())
             else:
-                logging.error("WebSocket connection closed.")
+                _LOGGER.error("WebSocket connection closed.")
         except Exception as e:
             if not self._stop_event.is_set():
-                logging.error(f"Error in receiver loop: {e}")
+                _LOGGER.error(f"Error in receiver loop: {e}")
 
     async def get_capabilities(self) -> BR.Capabilities:
         """Retrieve the device capabilities."""
@@ -767,4 +773,4 @@ class BoseRequestException(Exception):
         super().__init__(
             f"'{method} {resource}' returned {http_status}: Bose Error #{error_status} - {self.message}"
         )
-        logging.debug(f"Request body for previous error: {json.dumps(body, indent=4)}")
+        _LOGGER.debug(f"Request body for previous error: {json.dumps(body, indent=4)}")
