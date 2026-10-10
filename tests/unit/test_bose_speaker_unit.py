@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import websockets
 import jwt
 import time
 import pytest
@@ -1319,6 +1320,69 @@ async def test_set_chromecast():
     bose._request = fake_request  # type: ignore
     result = await bose.set_chromecast()
     assert result["source"] == "CHROMECAST"
+
+
+class BlockingWebsocket:
+    """Websocket whose recv() only returns once the connection is closed."""
+
+    def __init__(self):
+        self._closed = asyncio.Event()
+
+    async def send(self, message):
+        pass
+
+    async def recv(self):
+        await self._closed.wait()
+        raise websockets.ConnectionClosedOK(None, None)
+
+    async def close(self):
+        self._closed.set()
+
+
+@pytest.mark.asyncio
+async def test_disconnect_while_speaker_is_silent(monkeypatch, caplog):
+    bose = _make_bose()
+    reconnects = []
+
+    async def fake_reconnect():
+        reconnects.append(True)
+
+    bose._websocket = BlockingWebsocket()
+    bose._stop_event.clear()
+    bose._receiver_task = asyncio.create_task(bose._receiver_loop())
+    await asyncio.sleep(0)
+    monkeypatch.setattr(bose, "connect", fake_reconnect)
+
+    with caplog.at_level(logging.DEBUG):
+        await asyncio.wait_for(bose.disconnect(), timeout=2)
+        await asyncio.sleep(0.05)
+
+    assert bose._receiver_task.done()
+    assert reconnects == []
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+@pytest.mark.asyncio
+async def test_lost_connection_still_reconnects(monkeypatch):
+    bose = _make_bose()
+    reconnects = []
+
+    async def fake_reconnect():
+        reconnects.append(True)
+
+    websocket = BlockingWebsocket()
+    bose._websocket = websocket
+    bose._stop_event.clear()
+    monkeypatch.setattr(bose, "connect", fake_reconnect)
+    bose._receiver_task = asyncio.create_task(bose._receiver_loop())
+    await asyncio.sleep(0)
+
+    # The speaker drops the connection without disconnect() being called.
+    await websocket.close()
+    await asyncio.wait_for(bose._receiver_task, timeout=2)
+    await asyncio.sleep(0.05)
+
+    assert reconnects == [True]
 
 
 @pytest.mark.asyncio
