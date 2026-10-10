@@ -8,7 +8,12 @@ import requests
 from unittest.mock import patch, MagicMock
 
 # Adjust the import below to match the module name where BoseAuth is defined.
-from pybose.BoseAuth import BoseAuth, ControlToken
+from pybose.BoseAuth import (
+    BoseAuth,
+    BoseAuthRejectedError,
+    BoseAuthUnavailableError,
+    ControlToken,
+)
 
 # --- Tests for PKCE generation ---
 def test_generate_pkce():
@@ -193,8 +198,100 @@ def test_refresh_azure_tokens_success():
 def test_refresh_azure_tokens_failure():
     auth = BoseAuth()
     with patch.object(auth._session, 'post', side_effect=Exception("Test error")):
-        result = auth._refresh_azure_tokens(refresh_token="refresh")
-        assert result is None
+        with pytest.raises(BoseAuthUnavailableError):
+            auth._refresh_azure_tokens(refresh_token="refresh")
+
+
+def _response(status_code, body=None):
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = body or {}
+    resp.text = json.dumps(body or {})
+    return resp
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error"),
+    [
+        (400, BoseAuthRejectedError),
+        (401, BoseAuthRejectedError),
+        (403, BoseAuthRejectedError),
+        (429, BoseAuthUnavailableError),
+        (500, BoseAuthUnavailableError),
+        (503, BoseAuthUnavailableError),
+    ],
+)
+def test_refresh_azure_tokens_http_errors(status_code, error):
+    auth = BoseAuth()
+    with patch.object(auth._session, 'post', return_value=_response(status_code)):
+        with pytest.raises(error):
+            auth._refresh_azure_tokens(refresh_token="refresh")
+
+
+def test_refresh_azure_tokens_connection_error():
+    auth = BoseAuth()
+    with patch.object(
+        auth._session, 'post', side_effect=requests.ConnectionError("DNS failure")
+    ):
+        with pytest.raises(BoseAuthUnavailableError):
+            auth._refresh_azure_tokens(refresh_token="refresh")
+
+
+def test_refresh_azure_tokens_invalid_response():
+    auth = BoseAuth()
+    resp = _response(200)
+    resp.json.side_effect = ValueError("not json")
+    with patch.object(auth._session, 'post', return_value=resp):
+        with pytest.raises(BoseAuthUnavailableError):
+            auth._refresh_azure_tokens(refresh_token="refresh")
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error"),
+    [(401, BoseAuthRejectedError), (502, BoseAuthUnavailableError)],
+)
+def test_exchange_id_token_http_errors(status_code, error):
+    auth = BoseAuth()
+    with patch.object(auth._session, 'post', return_value=_response(status_code)):
+        with pytest.raises(error):
+            auth._exchange_id_token_for_bose_tokens("id_token")
+
+
+def test_exchange_id_token_connection_error():
+    auth = BoseAuth()
+    with patch.object(auth._session, 'post', side_effect=requests.Timeout("slow")):
+        with pytest.raises(BoseAuthUnavailableError):
+            auth._exchange_id_token_for_bose_tokens("id_token")
+
+
+@pytest.mark.parametrize(
+    ("side_effect", "error"),
+    [
+        (requests.ConnectionError("DNS failure"), BoseAuthUnavailableError),
+        (None, BoseAuthRejectedError),
+    ],
+)
+def test_do_token_refresh_reports_why_it_failed(side_effect, error):
+    """Callers can tell a rejected refresh token from Bose being unreachable."""
+    auth = BoseAuth()
+    auth.set_access_token("old_token", "old_refresh", "person123")
+    auth.set_azure_refresh_token("azure_refresh_token")
+    response = _response(400, {"error": "invalid_grant"})
+    with patch.object(auth._session, 'post', side_effect=side_effect, return_value=response):
+        with pytest.raises(error) as excinfo:
+            auth.do_token_refresh()
+    # Still a ValueError for callers written against earlier versions.
+    assert isinstance(excinfo.value, ValueError)
+    # The stored refresh token is kept, so the refresh can be retried.
+    assert auth.get_azure_refresh_token() == "azure_refresh_token"
+
+
+def test_do_token_refresh_without_azure_refresh_token_needs_login():
+    auth = BoseAuth()
+    auth.set_access_token("old_token", "old_refresh", "person123")
+    auth._azure_refresh_token = None
+    with pytest.raises(BoseAuthRejectedError):
+        auth.do_token_refresh()
 
 
 # --- Tests for is_token_valid ---
@@ -424,8 +521,8 @@ def test_refresh_azure_tokens_network_error():
     
     with patch.object(auth._session, 'post') as mock_post:
         mock_post.side_effect = Exception("Network error")
-        result = auth._refresh_azure_tokens("refresh_token")
-        assert result is None
+        with pytest.raises(BoseAuthUnavailableError):
+            auth._refresh_azure_tokens("refresh_token")
 
 # --- Tests for _exchange_id_token_for_bose_tokens ---
 def test_exchange_id_token_for_bose_tokens_success():
@@ -459,8 +556,8 @@ def test_exchange_id_token_for_bose_tokens_failure():
         mock_resp.text = "Invalid token"
         mock_post.return_value = mock_resp
         
-        result = auth._exchange_id_token_for_bose_tokens("invalid_token")
-        assert result is None
+        with pytest.raises(BoseAuthRejectedError):
+            auth._exchange_id_token_for_bose_tokens("invalid_token")
 
 def test_exchange_id_token_for_bose_tokens_network_error():
     auth = BoseAuth()
@@ -468,8 +565,8 @@ def test_exchange_id_token_for_bose_tokens_network_error():
     with patch.object(auth._session, 'post') as mock_post:
         mock_post.side_effect = Exception("Network error")
         
-        result = auth._exchange_id_token_for_bose_tokens("azure_id_token")
-        assert result is None
+        with pytest.raises(BoseAuthUnavailableError):
+            auth._exchange_id_token_for_bose_tokens("azure_id_token")
 
 # --- Tests for getControlToken with expired token refresh attempt ---
 def test_get_control_token_expired_token_refresh_exception():
@@ -523,7 +620,9 @@ def test_do_token_refresh_refresh_failed():
     auth._azure_refresh_token = "azure_refresh"
     
     with patch.object(auth, '_refresh_azure_tokens') as mock_refresh:
-        mock_refresh.return_value = None  # Refresh fails
+        mock_refresh.side_effect = BoseAuthUnavailableError(
+            "Failed to refresh Azure AD B2C tokens: Network error"
+        )
         
         with pytest.raises(ValueError, match="Failed to refresh Azure AD B2C tokens"):
             auth.do_token_refresh()
@@ -538,7 +637,9 @@ def test_do_token_refresh_exchange_failed():
     with patch.object(auth, '_refresh_azure_tokens') as mock_refresh, \
          patch.object(auth, '_exchange_id_token_for_bose_tokens') as mock_exchange:
         mock_refresh.return_value = azure_tokens
-        mock_exchange.return_value = None  # Exchange fails
+        mock_exchange.side_effect = BoseAuthUnavailableError(
+            "Failed to exchange id_token for Bose tokens: HTTP 502"
+        )
         
-        with pytest.raises(ValueError, match="Failed to exchange id_token for Bose tokens after refresh"):
+        with pytest.raises(ValueError, match="Failed to exchange id_token for Bose tokens"):
             auth.do_token_refresh()
