@@ -158,21 +158,23 @@ class BoseSpeaker:
         self._bose_auth: BoseAuth = bose_auth
         self._on_exception = on_exception
         self._connected = False
+        self._connect_lock: asyncio.Lock = asyncio.Lock()
 
     async def connect(self) -> None:
         """Connect to the WebSocket and start the receiver loop."""
-        await self.disconnect()
-        self._websocket = await websockets.connect(
-            self._url, subprotocols=[self._subprotocol], ssl=self._ssl_context
-        )
-        _LOGGER.info("WebSocket connection established.")
-        self._stop_event.clear()
-        self._receiver_task = asyncio.create_task(self._receiver_loop())
-        if self._subscribed_resources:
-            _LOGGER.debug("Subscribing to resources from previous session.")
-            await self.subscribe(self._subscribed_resources)
-        await self.get_capabilities()
-        self._connected = True
+        async with self._connect_lock:
+            await self.disconnect()
+            self._websocket = await websockets.connect(
+                self._url, subprotocols=[self._subprotocol], ssl=self._ssl_context
+            )
+            _LOGGER.info("WebSocket connection established.")
+            self._stop_event.clear()
+            self._receiver_task = asyncio.create_task(self._receiver_loop())
+            if self._subscribed_resources:
+                _LOGGER.debug("Subscribing to resources from previous session.")
+                await self.subscribe(self._subscribed_resources)
+            await self.get_capabilities()
+            self._connected = True
 
     async def disconnect(self) -> None:
         """Stop the receiver loop and close the WebSocket connection."""
